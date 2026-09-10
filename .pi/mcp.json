@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "lyrics-lint": {
+      "command": ["uv", "run", "--directory", "/home/rockerboo/code/lyrics-lint", "lyrics", "mcp"]
+    }
+  }
+}
