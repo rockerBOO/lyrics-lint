@@ -105,3 +105,8 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
   pattern → words index in memory (~1 s).
 - `slant_rhymes` compares the word's pattern against all unique patterns on
   demand (≈0.1 s), so no all-pairs DB is needed.
+
+## References & credits
+
+- Rhyme quantification scheme: [rhyme_dict](https://github.com/benrussell80/rhyme_dict) — lyrics-lint keeps the same scheme but replaces the Neo4j dependency with an in-memory pattern index.
+- Pronunciation data: [Carnegie Mellon Pronouncing Dictionary](http://www.speech.cs.cmu.edu/cgi-bin/cmudict).
