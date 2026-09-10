@@ -1,0 +1,17 @@
+[project]
+name = "lyrics-lint"
+version = "0.1.0"
+description = "Lyrics rhyme/slant-rhyme linter with CLI and MCP server"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "cmudict>=0.4",
+    "fastmcp>=2.0",
+]
+
+[project.scripts]
+lyrics = "lyrics_lint.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
