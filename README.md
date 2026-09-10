@@ -1,9 +1,8 @@
 # lyrics-lint
 
 A rhyme and slant-rhyme linter for lyrics, with both a CLI and an MCP server.
-Built on the same quantification scheme as the original [rhyme_dict](../others/rhyme_dict)
-project, but self-contained — no Neo4j required. Rhyme patterns are computed
-directly from the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
+Self-contained — no Neo4j required. Rhyme patterns are computed directly from
+the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
 
 ## How it works
 
@@ -18,11 +17,27 @@ directly from the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
 
 ## Setup
 
+Requires [uv](https://uv.dev) (and Python ≥ 3.10).
+
+**Option A — no clone, run straight from git** (recommended for one-off use and MCP clients):
+
 ```bash
+uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics --help
+```
+
+`uvx` caches the environment, so only the first run takes a few seconds.
+
+**Option B — clone and run locally:**
+
+```bash
+git clone https://github.com/rockerBOO/lyrics-lint
+cd lyrics-lint
 uv sync
 ```
 
 ## CLI usage
+
+With Option B, `uv run` replaces `uvx --from git+...` below:
 
 ```bash
 # Check a pair of lines (end-words extracted automatically)
@@ -40,6 +55,12 @@ uv run lyrics slant port --max-distance 2
 
 # Recommended replacement words (perfect + slant, or suffix fallback)
 uv run lyrics suggestions xylophone
+```
+
+Every example also works clone-free:
+
+```bash
+uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics check "the stars are burning bright" "and I'm feeling the light"
 ```
 
 `check` reports the verdict (`rhyme` / `slant` / `weak_slant` / `no_rhyme` /
@@ -61,15 +82,18 @@ Run it:
 
 ```bash
 uv run lyrics mcp
+# or clone-free:
+uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics mcp
 ```
 
-MCP client config (e.g. Claude Desktop / pi / any MCP client):
+MCP client config (e.g. Claude Desktop / pi / any MCP client) — runs directly
+from git, no local clone or path editing needed (requires `uv` and `git`):
 
 ```json
 {
   "mcpServers": {
     "lyrics-lint": {
-      "command": ["uv", "run", "--directory", "/home/rockerboo/code/lyrics-lint", "lyrics", "mcp"]
+      "command": ["uvx", "--from", "git+https://github.com/rockerBOO/lyrics-lint", "lyrics", "mcp"]
     }
   }
 }
