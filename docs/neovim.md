@@ -89,8 +89,3 @@ end, { desc = "Replace flagged word with a suggested rhyme" })
 2. Lines with rhyme problems get underlined, with a message explaining why.
 3. Put your cursor on a flagged line and press `<leader>lr` to see and pick
    a replacement word.
-
-**If diagnostic jump keys (like `]d`/`[d`) don't work on this file:** some
-Neovim configs only bind those when an LSP server is attached, and lyrics
-files don't have one. Make sure your diagnostic-jump keymaps aren't nested
-inside an `LspAttach` block.
