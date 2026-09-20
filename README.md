@@ -112,71 +112,13 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
 }
 ```
 
-## Editor integration (nvim-lint)
+## Editor integration
 
-`lyrics lint --json` is built for editor integration: it reads text on
-stdin and emits a JSON array of diagnostics, each shaped as:
-
-```json
-{
-  "line": 3,
-  "col": 14,
-  "end_col": 16,
-  "severity": "warning",
-  "code": "no-rhyme-partner",
-  "message": "'me' has no rhyme partner in this stanza (closest pattern distance 3)",
-  "suggestions": [
-    { "word": "crossed", "distance": 0 },
-    { "word": "abort", "distance": 1 }
-  ]
-}
-```
-
-`distance: 0` = perfect rhyme, `1`/`2` = slant/weak-slant, `null` = an
-unverified suffix-based fallback (used when the flagged word itself isn't
-in the pronunciation dictionary). `line`/`col`/`end_col` are 1-indexed,
-`end_col` exclusive.
-
-Example [nvim-lint](https://github.com/mfussenegger/nvim-lint) linter
-definition (adjust `cmd` to your install path, or use `uvx --from
-git+https://github.com/rockerBOO/lyrics-lint lyrics` instead of a local
-venv binary):
-
-```lua
-require("lint").linters.lyrics = {
-  cmd = "/path/to/lyrics-lint/.venv/bin/lyrics",
-  args = { "lint", "-", "--json" },
-  stdin = true,
-  stream = "stdout",
-  ignore_exitcode = true,
-  parser = function(output)
-    local ok, decoded = pcall(vim.json.decode, output)
-    if not ok or type(decoded) ~= "table" then
-      return {}
-    end
-    local severities = { info = vim.diagnostic.severity.INFO, warning = vim.diagnostic.severity.WARN }
-    local diagnostics = {}
-    for _, d in ipairs(decoded) do
-      table.insert(diagnostics, {
-        lnum = d.line - 1,
-        col = d.col - 1,
-        end_lnum = d.line - 1,
-        end_col = d.end_col - 1,
-        message = d.message,
-        code = d.code,
-        severity = severities[d.severity] or vim.diagnostic.severity.WARN,
-        source = "lyrics-lint",
-      })
-    end
-    return diagnostics
-  end,
-}
-```
-
-It isn't tied to any filetype by default — run it on demand, e.g.
-`require("lint").try_lint("lyrics")` bound to a keymap, since it's
-async (~1 s: cmudict loads fresh per invocation) and would be noisy if
-run on every markdown save.
+`lyrics lint --json` reads text on stdin/a file and emits structured
+diagnostics with ranked replacement suggestions — built for wiring into an
+editor's diagnostics UI. See [docs/neovim.md](docs/neovim.md) for a full
+[nvim-lint](https://github.com/mfussenegger/nvim-lint) setup, including a
+picker for replacing a flagged word with one of its suggestions.
 
 ## Design notes
 
