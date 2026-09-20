@@ -114,11 +114,8 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
 
 ## Editor integration
 
-`lyrics lint --json` reads text on stdin/a file and emits structured
-diagnostics with ranked replacement suggestions — built for wiring into an
-editor's diagnostics UI. See [docs/neovim.md](docs/neovim.md) for a full
-[nvim-lint](https://github.com/mfussenegger/nvim-lint) setup, including a
-picker for replacing a flagged word with one of its suggestions.
+Want live rhyme checking as you write? See [docs/neovim.md](docs/neovim.md)
+for Neovim setup.
 
 ## Design notes
 
