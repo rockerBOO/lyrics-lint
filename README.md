@@ -55,7 +55,20 @@ uv run lyrics slant port --max-distance 2
 
 # Recommended replacement words (perfect + slant, or suffix fallback)
 uv run lyrics suggestions xylophone
+
+# Lint a whole lyrics file: flag end-words with no rhyme partner in their
+# stanza, or that aren't in the pronunciation dictionary
+uv run lyrics lint song.md
+
+# Reads from stdin if FILE is omitted (or passed as '-')
+cat song.md | uv run lyrics lint --json
 ```
+
+`lint` splits the input into stanzas on blank lines and markdown structure
+(`#` headings, `[Section]` tags, `---` rules, lists), then checks each
+line's end-word against the others in its stanza. Each diagnostic includes
+ranked replacement `suggestions` (perfect + slant rhymes, targeting the
+stanza's dominant rhyme group) so you can pick a fix directly.
 
 Every example also works clone-free:
 
@@ -98,6 +111,72 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
   }
 }
 ```
+
+## Editor integration (nvim-lint)
+
+`lyrics lint --json` is built for editor integration: it reads text on
+stdin and emits a JSON array of diagnostics, each shaped as:
+
+```json
+{
+  "line": 3,
+  "col": 14,
+  "end_col": 16,
+  "severity": "warning",
+  "code": "no-rhyme-partner",
+  "message": "'me' has no rhyme partner in this stanza (closest pattern distance 3)",
+  "suggestions": [
+    { "word": "crossed", "distance": 0 },
+    { "word": "abort", "distance": 1 }
+  ]
+}
+```
+
+`distance: 0` = perfect rhyme, `1`/`2` = slant/weak-slant, `null` = an
+unverified suffix-based fallback (used when the flagged word itself isn't
+in the pronunciation dictionary). `line`/`col`/`end_col` are 1-indexed,
+`end_col` exclusive.
+
+Example [nvim-lint](https://github.com/mfussenegger/nvim-lint) linter
+definition (adjust `cmd` to your install path, or use `uvx --from
+git+https://github.com/rockerBOO/lyrics-lint lyrics` instead of a local
+venv binary):
+
+```lua
+require("lint").linters.lyrics = {
+  cmd = "/path/to/lyrics-lint/.venv/bin/lyrics",
+  args = { "lint", "-", "--json" },
+  stdin = true,
+  stream = "stdout",
+  ignore_exitcode = true,
+  parser = function(output)
+    local ok, decoded = pcall(vim.json.decode, output)
+    if not ok or type(decoded) ~= "table" then
+      return {}
+    end
+    local severities = { info = vim.diagnostic.severity.INFO, warning = vim.diagnostic.severity.WARN }
+    local diagnostics = {}
+    for _, d in ipairs(decoded) do
+      table.insert(diagnostics, {
+        lnum = d.line - 1,
+        col = d.col - 1,
+        end_lnum = d.line - 1,
+        end_col = d.end_col - 1,
+        message = d.message,
+        code = d.code,
+        severity = severities[d.severity] or vim.diagnostic.severity.WARN,
+        source = "lyrics-lint",
+      })
+    end
+    return diagnostics
+  end,
+}
+```
+
+It isn't tied to any filetype by default — run it on demand, e.g.
+`require("lint").try_lint("lyrics")` bound to a keymap, since it's
+async (~1 s: cmudict loads fresh per invocation) and would be noisy if
+run on every markdown save.
 
 ## Design notes
 
