@@ -9,6 +9,7 @@ import click
 
 from .core import get_engine
 from .lines import end_word
+from .lint import lint_text
 
 
 @click.group()
@@ -166,6 +167,41 @@ def suggestions(word, limit, as_json):
         click.echo(f"    {w}")
     for s in out["slant_rhymes"]:
         click.echo(f"    {s['word']}  [slant d{int(s['distance'])}]")
+
+
+@cli.command
+@click.argument("file", type=click.File("r"), default="-")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON diagnostics")
+def lint(file, as_json):
+    """Lint a lyrics file: flag end-words with no rhyme partner in their stanza.
+
+    Reads from FILE, or stdin if omitted (use '-' explicitly for stdin too).
+    Splits the text into stanzas on blank lines and structural markdown
+    (headings, '[Section]' tags, horizontal rules, lists), then checks each
+    line's end-word against the others in its stanza.
+    """
+    diagnostics = lint_text(file.read())
+
+    if as_json:
+        click.echo(json.dumps(diagnostics, indent=2))
+        return
+
+    if not diagnostics:
+        click.echo("no issues found")
+        return
+
+    for d in diagnostics:
+        click.echo(f"{d['line']}:{d['col']}: {d['severity']}: {d['message']} [{d['code']}]")
+        if d.get("suggestions"):
+            labels = []
+            for s in d["suggestions"][:10]:
+                if s["distance"] is None:
+                    labels.append(s["word"])
+                elif s["distance"] == 0:
+                    labels.append(s["word"])
+                else:
+                    labels.append(f"{s['word']} (slant d{s['distance']})")
+            click.echo(f"    try: {', '.join(labels)}")
 
 
 @cli.command
