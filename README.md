@@ -114,8 +114,8 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
 
 ## Editor integration
 
-Want live rhyme checking as you write? See [docs/neovim.md](docs/neovim.md)
-for Neovim setup.
+Want to check your lyrics for rhyme issues right in your editor? See
+[docs/neovim.md](docs/neovim.md) for Neovim setup.
 
 ## Design notes
 
