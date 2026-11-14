@@ -171,3 +171,29 @@ def test_missing_hint_mentions_fetch_command(tmp_path, monkeypatch):
 def test_verified_path_is_none_when_absent(tmp_path, monkeypatch):
     monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
     assert datasets.verified_path("cmudict") is None
+
+
+# ------------------------------------------------ degradation review focus
+
+
+def test_tampered_cache_file_is_treated_as_absent(tmp_path, monkeypatch):
+    """A half-written dictionary must not produce rhymes from garbage."""
+    from lyrics_lint.core import RhymeEngine
+
+    payload = b"YOU  Y UW1\n"
+    dataset = datasets.Dataset(
+        "cmudict",
+        "cmudict.dict",
+        "file:///nope",
+        hashlib.sha256(payload).hexdigest(),
+        "BSD-2-Clause",
+        "mini dict",
+    )
+    (tmp_path / "cmudict.dict").write_bytes(b"YOU  Y UW1\nTAMPERED")
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(datasets, "DATASETS", (dataset,))
+    monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {dataset.name: dataset})
+
+    assert datasets.verified_path("cmudict") is None
+    engine = RhymeEngine(overrides=None, g2p=None, frequency=None)
+    assert engine.lookup("you")["found"] is False

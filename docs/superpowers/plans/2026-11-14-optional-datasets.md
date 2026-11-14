@@ -39,7 +39,7 @@
 **Interfaces:**
 - Produces: `Dataset(name, filename, url, sha256, licence, description)` frozen dataclass; `DATASETS: tuple[Dataset, ...]`; `data_dir() -> Path`; `dataset_path(name: str) -> Path`; `sha256_of(path: Path) -> str`; `status(datasets=DATASETS) -> list[dict]` where each dict has `name`, `path`, `present`, `bytes`, `verified`, `licence`.
 
-- [ ] **Step 1: Write the failing test** — `tests/test_datasets.py`
+- [x] **Step 1: Write the failing test** — `tests/test_datasets.py`
 
 ```python
 def test_data_dir_honours_explicit_override(tmp_path, monkeypatch):
@@ -91,10 +91,10 @@ def test_status_flags_wrong_bytes_as_unverified(tmp_path, monkeypatch):
     assert entry["present"] is True and entry["verified"] is False
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -v` → `ModuleNotFoundError`/`AttributeError`
-- [ ] **Step 3: Implement** `lyrics_lint/datasets.py` with the manifest exactly as specified (`cmudict`, `frequencies`, pinned URLs and sha256 values copied from the spec). `data_dir()` uses `LYRICS_LINT_DATA` if set (an absent directory is still returned, not created), else `$XDG_CACHE_HOME/lyrics-lint`, else `Path.home()/".cache"/"lyrics-lint"`. `status()` never creates or modifies anything.
-- [ ] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
-- [ ] **Step 5: Commit** — `git commit -m "data: add pinned dataset manifest and cache paths"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -v` → `ModuleNotFoundError`/`AttributeError`
+- [x] **Step 3: Implement** `lyrics_lint/datasets.py` with the manifest exactly as specified (`cmudict`, `frequencies`, pinned URLs and sha256 values copied from the spec). `data_dir()` uses `LYRICS_LINT_DATA` if set (an absent directory is still returned, not created), else `$XDG_CACHE_HOME/lyrics-lint`, else `Path.home()/".cache"/"lyrics-lint"`. `status()` never creates or modifies anything.
+- [x] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
+- [x] **Step 5: Commit** — `git commit -m "data: add pinned dataset manifest and cache paths"`
 
 ---
 
@@ -107,7 +107,7 @@ def test_status_flags_wrong_bytes_as_unverified(tmp_path, monkeypatch):
 **Interfaces:**
 - Produces: `fetch(names: Iterable[str] | None = None, force: bool = False, datasets=DATASETS) -> list[dict]`. Returns one `status`-shaped dict per dataset, with an added `"fetched": bool`. Raises `ValueError` for an unknown name and `RuntimeError` on hash mismatch (naming the dataset and both hashes).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def _serve(tmp_path, payload):
@@ -156,10 +156,10 @@ def test_fetch_rejects_unknown_dataset(tmp_path, monkeypatch):
         datasets.fetch(["nope"], datasets=())
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -k fetch -v`
-- [ ] **Step 3: Implement** `fetch()`: stream the URL in 64 KiB chunks into `<target>.part` while feeding `hashlib.sha256`, then compare, then `os.replace`. On mismatch or any exception, remove the `.part` file in a `finally` before re-raising. `force=True` bypasses the "already verified" skip. `data_dir().mkdir(parents=True, exist_ok=True)` happens inside `fetch` only.
-- [ ] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
-- [ ] **Step 5: Commit** — `git commit -m "data: fetch datasets with sha256 verification and atomic writes"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -k fetch -v`
+- [x] **Step 3: Implement** `fetch()`: stream the URL in 64 KiB chunks into `<target>.part` while feeding `hashlib.sha256`, then compare, then `os.replace`. On mismatch or any exception, remove the `.part` file in a `finally` before re-raising. `force=True` bypasses the "already verified" skip. `data_dir().mkdir(parents=True, exist_ok=True)` happens inside `fetch` only.
+- [x] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
+- [x] **Step 5: Commit** — `git commit -m "data: fetch datasets with sha256 verification and atomic writes"`
 
 ---
 
@@ -172,7 +172,7 @@ def test_fetch_rejects_unknown_dataset(tmp_path, monkeypatch):
 **Interfaces:**
 - Produces: `load_cmudict(path: Path) -> dict[str, list[str]]` (pronunciations are space-joined uppercase ARPAbet strings, keys lowercased, `word(2)` alt-pron markers stripped and appended, `;;;` comments and blank lines skipped); `load_frequencies(path: Path) -> Callable[[str], float]` returning `log10(count)` for a known word and `0.0` otherwise; `lyrics_lint.datasets.missing_hint() -> str | None` returning `"no pronunciation dictionary: run 'lyrics data fetch'"` when the cmudict file is absent or unverified, else `None`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_load_cmudict_skips_comments_and_strips_alt_markers(tmp_path):
@@ -195,10 +195,10 @@ def test_missing_hint_mentions_fetch_command(tmp_path, monkeypatch):
     assert "lyrics data fetch" in datasets.missing_hint()
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -k "load or hint" -v`
-- [ ] **Step 3: Implement** the three functions. The frequency callable closes over a `dict[str, int]` and does the `log10` conversion per call (cheap, and keeps the table reusable).
-- [ ] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
-- [ ] **Step 5: Commit** — `git commit -m "data: parse cmudict.dict and frequency list formats"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_datasets.py -k "load or hint" -v`
+- [x] **Step 3: Implement** the three functions. The frequency callable closes over a `dict[str, int]` and does the `log10` conversion per call (cheap, and keeps the table reusable).
+- [x] **Step 4: Run to verify pass** — `uv run pytest tests/test_datasets.py -v`
+- [x] **Step 5: Commit** — `git commit -m "data: parse cmudict.dict and frequency list formats"`
 
 ---
 
@@ -213,7 +213,7 @@ def test_missing_hint_mentions_fetch_command(tmp_path, monkeypatch):
 - Consumes: `datasets.dataset_path`, `datasets.load_cmudict`, `datasets.load_frequencies`.
 - Produces: `RhymeEngine(overrides=..., g2p=None, dictionary: Mapping[str, list[str]] | None = None, frequency: Callable[[str], float] | None = None)`. `None` means "use the dataset layer, empty when absent". `engine.dict` is the merged mapping (dictionary + overrides + g2p results); `engine.frequency(word) -> float`.
 
-- [ ] **Step 1: Build the fixtures.** Prune the real files to the words the tests assert on plus their whole rhyme-pattern families:
+- [x] **Step 1: Build the fixtures.** Prune the real files to the words the tests assert on plus their whole rhyme-pattern families:
 
 ```bash
 uv run python - <<'PY'
@@ -243,7 +243,7 @@ PY
 
   Verify the fixtures are plausible before continuing: `wc -l tests/fixtures/*`, and check that `grep -c "^you " tests/fixtures/cmudict.dict` is 1.
 
-- [ ] **Step 2: Write the failing test** — append to `tests/test_core.py`
+- [x] **Step 2: Write the failing test** — append to `tests/test_core.py`
 
 ```python
 def test_engine_indexes_injected_dictionary():
@@ -261,10 +261,10 @@ def test_engine_without_dictionary_is_empty_but_usable():
     assert engine.slant_rhymes("you") == []
 ```
 
-- [ ] **Step 3: Run to verify failure** — `uv run pytest tests/test_core.py -k "injected or without_dictionary" -v`
-- [ ] **Step 4: Implement** the constructor changes, replacing the `cmudict` import with `dictionary or load from datasets`. Add `tests/conftest.py` with session fixtures `dictionary`/`frequency` built from `tests/fixtures/`, and a module-scoped `engine` fixture (`RhymeEngine(overrides=None, dictionary=dictionary, frequency=frequency)`), then delete the local `engine` fixture in `tests/test_core.py` so it comes from conftest.
-- [ ] **Step 5: Run the whole suite and make every test pass** — `uv run pytest` (expect failures from whichever fixture words are missing; add those words to the fixture generation list and re-run the Task 4 step 1 script until green)
-- [ ] **Step 6: Commit** — `git commit -m "core: take the pronunciation dictionary by injection, defaulting to datasets"`
+- [x] **Step 3: Run to verify failure** — `uv run pytest tests/test_core.py -k "injected or without_dictionary" -v`
+- [x] **Step 4: Implement** the constructor changes, replacing the `cmudict` import with `dictionary or load from datasets`. Add `tests/conftest.py` with session fixtures `dictionary`/`frequency` built from `tests/fixtures/`, and a module-scoped `engine` fixture (`RhymeEngine(overrides=None, dictionary=dictionary, frequency=frequency)`), then delete the local `engine` fixture in `tests/test_core.py` so it comes from conftest.
+- [x] **Step 5: Run the whole suite and make every test pass** — `uv run pytest` (expect failures from whichever fixture words are missing; add those words to the fixture generation list and re-run the Task 4 step 1 script until green)
+- [x] **Step 6: Commit** — `git commit -m "core: take the pronunciation dictionary by injection, defaulting to datasets"`
 
 ---
 
@@ -277,7 +277,7 @@ def test_engine_without_dictionary_is_empty_but_usable():
 **Interfaces:**
 - Produces: `engine.frequency(word: str) -> float`; `RhymeEngine(frequency=...)` where `None` means "load the `frequencies` dataset, else 0.0".
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_injected_frequency_controls_ranking():
@@ -299,10 +299,10 @@ def test_missing_frequency_table_degrades_to_alphabetical():
     assert engine.rhymes("z") == ["z"]
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_core.py -k frequency -v`
-- [ ] **Step 3: Implement** `self.frequency` in `__init__` (`frequency or dataset_frequencies() or zero`), replace every module-level `frequency(...)` call in `rhymes()`/`slant_rhymes()`/`suggestions()` with `self.frequency(...)`, and rewrite the `zipf_frequency` assertions in `tests/test_core.py` to use the conftest `frequency` fixture instead.
-- [ ] **Step 4: Run to verify pass** — `uv run pytest`
-- [ ] **Step 5: Commit** — `git commit -m "core: take the frequency table by injection, defaulting to datasets"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_core.py -k frequency -v`
+- [x] **Step 3: Implement** `self.frequency` in `__init__` (`frequency or dataset_frequencies() or zero`), replace every module-level `frequency(...)` call in `rhymes()`/`slant_rhymes()`/`suggestions()` with `self.frequency(...)`, and rewrite the `zipf_frequency` assertions in `tests/test_core.py` to use the conftest `frequency` fixture instead.
+- [x] **Step 4: Run to verify pass** — `uv run pytest`
+- [x] **Step 5: Commit** — `git commit -m "core: take the frequency table by injection, defaulting to datasets"`
 
 ---
 
@@ -315,7 +315,7 @@ def test_missing_frequency_table_degrades_to_alphabetical():
 **Interfaces:**
 - Produces: `lyrics data status [--json]`, `lyrics data fetch [NAME ...] [--force]`, `lyrics data path [NAME]`. `check`, `rhymes`, `slant`, `suggestions` print `datasets.missing_hint()` to stderr when the dictionary is absent, before their normal output. MCP tools add `"hint"` to their returned dict when `missing_hint()` is not `None`.
 
-- [ ] **Step 1: Write the failing test** — `tests/test_cli.py`
+- [x] **Step 1: Write the failing test** — `tests/test_cli.py`
 
 ```python
 def test_data_status_marks_absent(tmp_path, monkeypatch):
@@ -343,10 +343,10 @@ def test_data_fetch_rejects_unknown_name(tmp_path, monkeypatch):
     assert "nope" in result.output
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_cli.py -v`
-- [ ] **Step 3: Implement** the command group (`@cli.group("data")` with three subcommands) and the stderr hint. `status` prints a fixed-width table: name, present/missing, verified, size, licence, path.
-- [ ] **Step 4: Run to verify pass** — `uv run pytest`
-- [ ] **Step 5: Commit** — `git commit -m "cli: add 'lyrics data' commands and missing-dataset hints"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_cli.py -v`
+- [x] **Step 3: Implement** the command group (`@cli.group("data")` with three subcommands) and the stderr hint. `status` prints a fixed-width table: name, present/missing, verified, size, licence, path.
+- [x] **Step 4: Run to verify pass** — `uv run pytest`
+- [x] **Step 5: Commit** — `git commit -m "cli: add 'lyrics data' commands and missing-dataset hints"`
 
 ---
 
@@ -359,7 +359,7 @@ def test_data_fetch_rejects_unknown_name(tmp_path, monkeypatch):
 **Interfaces:**
 - Produces: no import of `cmudict`, `wordfreq`, or `g2p_en` outside `try/except ImportError` inside function bodies. `lyrics_lint/__init__.py` still imports.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_no_heavy_dataset_imports_at_module_level():
@@ -368,10 +368,10 @@ def test_no_heavy_dataset_imports_at_module_level():
         assert name not in source
 ```
 
-- [ ] **Step 2: Run to verify failure** — `uv run pytest tests/test_core.py -k heavy -v`
-- [ ] **Step 3: Implement** — `uv remove cmudict wordfreq g2p-en`; move the `g2p_en` import inside `default_g2p` under `try/except ImportError` (already there, confirm); update README: new "Datasets" section (fetch/status/path, cache location, licences and attribution for the pruned fixtures), remove the old dependency claims; add `tests/fixtures/README.md` with both licences and the pruning note.
-- [ ] **Step 4: Run to verify pass** — `uv run pytest`, `uv run ruff check .`, `uv build --wheel` and confirm with `unzip -l dist/*.whl | grep -E "cmudict|en_50k"` that no dataset is bundled.
-- [ ] **Step 5: Commit** — `git commit -m "build: drop dataset dependencies; document fetching"`
+- [x] **Step 2: Run to verify failure** — `uv run pytest tests/test_core.py -k heavy -v`
+- [x] **Step 3: Implement** — `uv remove cmudict wordfreq g2p-en`; move the `g2p_en` import inside `default_g2p` under `try/except ImportError` (already there, confirm); update README: new "Datasets" section (fetch/status/path, cache location, licences and attribution for the pruned fixtures), remove the old dependency claims; add `tests/fixtures/README.md` with both licences and the pruning note.
+- [x] **Step 4: Run to verify pass** — `uv run pytest`, `uv run ruff check .`, `uv build --wheel` and confirm with `unzip -l dist/*.whl | grep -E "cmudict|en_50k"` that no dataset is bundled.
+- [x] **Step 5: Commit** — `git commit -m "build: drop dataset dependencies; document fetching"`
 
 ---
 
@@ -380,3 +380,25 @@ def test_no_heavy_dataset_imports_at_module_level():
 - Spec coverage: manifest/paths (Task 1), fetch+verify (Task 2), parsers (Task 3), dictionary injection (Task 4), frequency injection (Task 5), CLI/MCP surface (Task 6), dependency removal + docs (Task 7). Degradation contract is covered by tests in Tasks 4, 5, and 6. Licence/attribution is Task 7.
 - Type consistency: `Dataset` field order is fixed in Task 1 and used positionally in Tasks 1–2 tests; `status()`/`fetch()` shapes are shared; `load_cmudict`/`load_frequencies` names are used verbatim in Task 4.
 - Review Focus items are pinned: absent directory (Task 1), truncated file (Task 1 unverified), interrupted fetch (Task 2), alt-pron marker (Task 3), frequency-only word (Task 5 ranking test).
+
+---
+
+## Execution ledger
+
+- Tasks 1-3 landed as one commit (`bc19aea`): the module was written as a unit;
+  splitting would have committed untested fetch/parser code. RED verified by
+  removing the module and watching the test file fail to import.
+- Tasks 4-5 landed as one commit (`ace1d08`): injecting only the dictionary
+  would have meant touching every ranking call site twice. Provenance for
+  dictionary words is `dataset`, not `cmudict`.
+- Task 6 (`0290241`): two harness bugs surfaced and were fixed —
+  `status()`/`fetch()` bound the manifest as a default argument (untestable),
+  and `RhymeEngine(dictionary={})` fell through to the dataset layer because an
+  empty mapping is falsy.
+- Task 7 (`38d4c97`): dependencies are `click`, `fastmcp`; wheel holds no
+  dataset.
+- Review Focus follow-ups: tampered cache file is treated as absent (test), and
+  `verified_path()` no longer raises `KeyError` for a name outside the manifest
+  (found by that test). A frequency-list word with no pronunciation ranks 0.0
+  and never invents a result (test).
+- Suite time: ~20s -> ~1s, with no cache and no network.

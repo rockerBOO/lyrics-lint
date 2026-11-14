@@ -117,11 +117,18 @@ def status(datasets: Sequence[Dataset] | None = None) -> list[dict]:
 
 
 def verified_path(name: str) -> Path | None:
-    """Path to a dataset whose bytes match the pinned hash, else None."""
-    path = dataset_path(name)
+    """Path to a dataset whose bytes match the pinned hash, else None.
+
+    An unknown name is not an error: the engine asks for optional datasets by
+    name and must keep working when one is not part of the manifest.
+    """
+    dataset = DATASETS_BY_NAME.get(name)
+    if dataset is None:
+        return None
+    path = data_dir() / dataset.filename
     if not path.is_file():
         return None
-    return path if sha256_of(path) == DATASETS_BY_NAME[name].sha256 else None
+    return path if sha256_of(path) == dataset.sha256 else None
 
 
 def missing_hint() -> str | None:

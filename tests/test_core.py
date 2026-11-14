@@ -353,3 +353,15 @@ def test_declared_dependencies_are_code_only():
     declared = " ".join(project["project"]["dependencies"]).lower()
     for dataset_package in ("cmudict", "wordfreq", "g2p-en"):
         assert dataset_package not in declared
+
+
+def test_frequency_table_entry_without_a_pronunciation_does_not_crash(
+    engine_factory,
+):
+    """A word can be in the frequency list and not in the dictionary: ranking
+    must return 0.0 for it, never a KeyError, and never invent a result."""
+    engine = engine_factory(dictionary={"you": ["Y UW1"]})
+
+    assert engine.rhymes("you") == []
+    assert engine.frequency("definitely-not-a-word") == 0.0
+    assert all(s["word"] in engine.dict for s in engine.slant_rhymes("you", 2, 5))
