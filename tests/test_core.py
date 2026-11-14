@@ -365,3 +365,38 @@ def test_frequency_table_entry_without_a_pronunciation_does_not_crash(
     assert engine.rhymes("you") == []
     assert engine.frequency("definitely-not-a-word") == 0.0
     assert all(s["word"] in engine.dict for s in engine.slant_rhymes("you", 2, 5))
+
+
+# ------------------------------------------------------- suffix fallback fixes
+
+
+def _suffix_engine():
+    """A tiny dictionary where the target has no rhymes but shares a suffix.
+
+    The real fixture is pruned to rhyme families, so no word in it exercises
+    the fallback; this one is built to.
+    """
+    return RhymeEngine(
+        overrides=None,
+        dictionary={
+            "purple": ["P ER1 P AH0 L"],
+            "people": ["P IY1 P AH0 L"],
+            "simple": ["S IH1 M P AH0 L"],
+            "trample": ["T R AE1 M P AH0 L"],
+        },
+        frequency=lambda w: {"people": 5.0, "simple": 9.0, "trample": 1.0}.get(w, 0.0),
+    )
+
+
+def test_suffix_candidates_never_suggest_the_word_itself():
+    # Before the fix this returned ['purple'] for 'purple'.
+    assert "purple" not in _suffix_engine().suffix_candidates("purple", limit=10)
+
+
+def test_suffix_candidates_are_ordered_by_frequency():
+    # Alphabetical would be people, simple, trample.
+    assert _suffix_engine().suffix_candidates("purple", limit=3) == [
+        "simple",
+        "people",
+        "trample",
+    ]

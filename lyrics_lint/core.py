@@ -543,14 +543,18 @@ class RhymeEngine:
         self, word: str, min_suffix: int = 3, limit: int = 20
     ) -> list[str]:
         """When a word has no known rhymes, fall back to words sharing its
-        final suffix (last 3+ characters) as assonance-style candidates."""
+        final suffix (last 3+ characters) as assonance-style candidates.
+
+        Ranked by frequency like every other suggestion path, and never
+        includes the word itself.
+        """
         w = word.lower()
-        candidates = []
+        candidates: list[str] = []
         for suffix_len in range(min_suffix, min(len(w), 10) + 1):
             suffix = w[-suffix_len:]
-            matches = [x for x in self.dict if x.endswith(suffix)]
+            matches = {x for x in self.dict if x != w and x.endswith(suffix)}
             if matches:
-                candidates = sorted(set(matches))
+                candidates = sorted(matches, key=lambda x: (-self.frequency(x), x))
                 break
         return candidates[:limit]
 
