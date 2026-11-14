@@ -10,7 +10,6 @@ from typing import Annotated
 from fastmcp import FastMCP
 from pydantic import Field
 
-from . import datasets
 from .core import get_engine
 from .lines import end_word
 
@@ -18,8 +17,13 @@ mcp = FastMCP("lyrics-lint")
 
 
 def _hint(result: dict) -> dict:
-    """Attach the fetch hint to a tool result when no dictionary is loaded."""
-    hint = datasets.missing_hint()
+    """Attach the fetch hint when this process has no dataset dictionary.
+
+    Reads the engine, not the filesystem: an engine built before a fetch stays
+    empty until get_engine() rebuilds it, and the hint must keep showing until
+    then.
+    """
+    hint = get_engine().missing_hint()
     if hint is not None:
         result["hint"] = hint
     return result

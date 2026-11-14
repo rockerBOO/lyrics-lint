@@ -1,5 +1,7 @@
 """CLI tests for the `lyrics data` group and missing-dataset behaviour."""
 
+import pathlib
+
 from click.testing import CliRunner
 
 from lyrics_lint.cli import cli
@@ -107,3 +109,52 @@ def test_data_fetch_reports_network_failure_without_a_traceback(tmp_path, monkey
     assert "Error:" in result.output
     assert "cmudict" in result.output
     assert "Traceback" not in result.output
+
+
+def _verified_dict_on_disk(tmp_path, monkeypatch):
+    """Put a verifying cmudict in the cache while the engine stays empty."""
+    import hashlib
+
+    from lyrics_lint import datasets
+
+    payload = pathlib.Path("tests/fixtures/cmudict.dict").read_bytes()
+    dataset = datasets.Dataset(
+        "cmudict",
+        "cmudict.dict",
+        "file:///x",
+        hashlib.sha256(payload).hexdigest(),
+        "BSD-2-Clause",
+        "mini",
+    )
+    (tmp_path / "cmudict.dict").write_bytes(payload)
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(datasets, "DATASETS", (dataset,))
+    monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {"cmudict": dataset})
+    monkeypatch.setattr(
+        "lyrics_lint.cli.get_engine",
+        lambda: RhymeEngine(overrides=None, dictionary={}, frequency=lambda _w: 0.0),
+    )
+
+
+def test_hint_follows_the_engine_not_the_filesystem(tmp_path, monkeypatch):
+    # Regression: the hint used to disappear as soon as the file verified, even
+    # though this engine had been built before the fetch and stayed empty.
+    _verified_dict_on_disk(tmp_path, monkeypatch)
+
+    result = CliRunner().invoke(cli, ["rhymes", "you"])
+
+    assert result.exit_code == 0
+    assert "lyrics data fetch" in result.output
+
+
+def test_json_payload_carries_the_hint_when_data_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(
+        "lyrics_lint.cli.get_engine",
+        lambda: RhymeEngine(overrides=None, dictionary={}, frequency=lambda _w: 0.0),
+    )
+
+    result = CliRunner().invoke(cli, ["rhymes", "you", "--json"])
+
+    assert '"hint"' in result.output
+    assert "lyrics data fetch" in result.output

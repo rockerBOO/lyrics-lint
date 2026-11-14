@@ -27,11 +27,16 @@ def cli(use_g2p):
         os.environ[G2P_ENV_VAR] = "1"
 
 
-def _warn_missing_data() -> None:
-    """Point at `lyrics data fetch` when there is nothing to rhyme with."""
-    hint = datasets.missing_hint()
+def _warn_missing_data(engine) -> str | None:
+    """Point at `lyrics data fetch` when this engine has nothing to rhyme with.
+
+    Asks the engine rather than the filesystem: an engine built before a fetch
+    is still empty, so the advice has to keep showing until it is rebuilt.
+    """
+    hint = engine.missing_hint()
     if hint is not None:
         click.echo(f"warning: {hint}", err=True)
+    return hint
 
 
 @cli.group("data")
@@ -100,8 +105,8 @@ def check(line_a, line_b, word_a, word_b, as_json):
 
     End-words are extracted automatically; pass --word-a/--word-b to override.
     """
-    _warn_missing_data()
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     a = word_a or end_word(line_a)
     b = word_b or end_word(line_b)
     result = engine.check_pair(a, b)
@@ -130,7 +135,7 @@ def check(line_a, line_b, word_a, word_b, as_json):
     )
 
     if as_json:
-        click.echo(json.dumps(result, indent=2))
+        click.echo(json.dumps({**result, "hint": hint} if hint else result, indent=2))
         return
 
     verdict = result["verdict"]
@@ -170,8 +175,8 @@ def check(line_a, line_b, word_a, word_b, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def rhymes(word, limit, as_json):
     """List perfect rhymes for a word."""
-    _warn_missing_data()
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     info = engine.lookup(word)
     if not info["found"]:
         candidates = engine.suffix_candidates(word)
@@ -189,7 +194,7 @@ def rhymes(word, limit, as_json):
             "perfect_rhymes": engine.rhymes(word, limit=limit),
         }
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found in the pronunciation dictionary.")
@@ -217,8 +222,8 @@ def rhymes(word, limit, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def slant(word, max_distance, limit, as_json):
     """List slant rhymes for a word, ranked by pattern distance."""
-    _warn_missing_data()
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     if not engine.lookup(word)["found"]:
         out = {
             "word": word,
@@ -233,7 +238,7 @@ def slant(word, max_distance, limit, as_json):
             "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
         }
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found in the pronunciation dictionary.")
@@ -254,11 +259,11 @@ def slant(word, max_distance, limit, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def suggestions(word, limit, as_json):
     """Recommended replacement words: perfect + slant rhymes, or suffix fallback."""
-    _warn_missing_data()
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     out = engine.suggestions(word, limit)
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found; suffix-based candidates:")
@@ -286,7 +291,7 @@ def lint(file, as_json):
     (headings, '[Section]' tags, horizontal rules, lists), then checks each
     line's end-word against the others in its stanza.
     """
-    _warn_missing_data()
+    _warn_missing_data(get_engine())
     diagnostics = lint_text(file.read())
 
     if as_json:
