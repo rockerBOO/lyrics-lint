@@ -58,9 +58,7 @@ def is_lyric_line(line: str) -> bool:
         return False
     if SECTION_TAG_RE.match(s):
         return False
-    if LIST_RE.match(line):
-        return False
-    return True
+    return not LIST_RE.match(line)
 
 
 def parse_stanzas(text: str) -> list[list[tuple[int, str]]]:

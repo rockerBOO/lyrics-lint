@@ -1,0 +1,21 @@
+# Pronunciation overrides for lyrics-lint.
+#
+# Merged over CMUdict at load time. CMUdict format: "<word> <ARPABET phonemes>",
+# one entry per line. `#` starts a comment.
+#
+# Every entry MUST contain at least one stress-marked vowel (digit 1 or 2),
+# otherwise the rhyme pattern can't be derived and loading fails.
+#
+#   <word>  PH ON EM ES      add a pronunciation (appended, never replaced)
+#   -<word>                  remove a word from the dictionary
+#
+# Slang, brand names and modern coinages missing from CMUdict (2015 era).
+
+rizz        R IH1 Z
+rizz        R IH2 Z
+gyatt       G Y AA1 T
+skibidi     S K IH0 B IH1 D IY0
+delulu      D IH0 L UW1 L UW0
+doomscroll  D UW1 M S K R OW2 L
+ghosting    G OW1 S T IH0 NG
+midjourney  M IH1 D JH ER2 N IY0

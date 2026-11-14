@@ -3,4 +3,4 @@
 from .core import RhymeEngine, get_engine, rhyme_pattern
 from .lines import end_word
 
-__all__ = ["RhymeEngine", "get_engine", "rhyme_pattern", "end_word"]
+__all__ = ["RhymeEngine", "end_word", "get_engine", "rhyme_pattern"]

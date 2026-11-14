@@ -3,19 +3,95 @@
 from __future__ import annotations
 
 import json
-import sys
+import os
 
 import click
 
-from .core import get_engine
+from . import datasets
+from .core import G2P_ENV_VAR, get_engine
 from .lines import end_word
 from .lint import lint_text
 
 
 @click.group()
 @click.version_option()
-def cli():
+@click.option(
+    "--g2p",
+    "use_g2p",
+    is_flag=True,
+    help="Guess pronunciations for words missing from the dictionary (slower first run).",
+)
+def cli(use_g2p):
     """Lyrics rhyme linter: check pairs, find rhymes, and suggest replacements."""
+    if use_g2p:
+        os.environ[G2P_ENV_VAR] = "1"
+
+
+def _warn_missing_data(engine) -> str | None:
+    """Point at `lyrics data fetch` when this engine has nothing to rhyme with.
+
+    Asks the engine rather than the filesystem: an engine built before a fetch
+    is still empty, so the advice has to keep showing until it is rebuilt.
+    """
+    hint = engine.missing_hint()
+    if hint is not None:
+        click.echo(f"warning: {hint}", err=True)
+    return hint
+
+
+@cli.group("data")
+def data():
+    """Manage the optional speech datasets (nothing ships in the package)."""
+
+
+@data.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON")
+def data_status(as_json):
+    """Show which datasets are present and whether they still verify."""
+    entries = datasets.status()
+    if as_json:
+        click.echo(json.dumps(entries, indent=2))
+        return
+    for entry in entries:
+        if entry["verified"]:
+            state = "ok"
+        elif entry["present"]:
+            state = "unverified"
+        else:
+            state = "missing"
+        click.echo(
+            f"{entry['name']:<12} {state:<11} {entry['bytes']:>9} bytes  "
+            f"{entry['licence']:<14} {entry['path']}"
+        )
+
+
+@data.command("fetch")
+@click.argument("names", nargs=-1)
+@click.option("--force", is_flag=True, help="Re-download even if the file verifies")
+def data_fetch(names, force):
+    """Download datasets into the cache and verify their sha256."""
+    try:
+        results = datasets.fetch(names or None, force=force)
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for entry in results:
+        action = "fetched" if entry["fetched"] else "already present"
+        click.echo(
+            f"{entry['name']:<12} {action:<16} {entry['bytes']:>9} bytes  {entry['path']}"
+        )
+
+
+@data.command("path")
+@click.argument("name", required=False)
+def data_path(name):
+    """Print the cache directory, or the path of one dataset."""
+    if name is None:
+        click.echo(datasets.data_dir())
+        return
+    try:
+        click.echo(datasets.dataset_path(name))
+    except KeyError as exc:
+        raise click.ClickException(f"unknown dataset: {name}") from exc
 
 
 @cli.command
@@ -30,23 +106,36 @@ def check(line_a, line_b, word_a, word_b, as_json):
     End-words are extracted automatically; pass --word-a/--word-b to override.
     """
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     a = word_a or end_word(line_a)
     b = word_b or end_word(line_b)
     result = engine.check_pair(a, b)
     # Attach recommendations so the linter can suggest fixes.
-    result["recommendations"] = engine.suggestions(b) if result["found_b"] else {
-        "word": b, "found": False,
-        "perfect_rhymes": [], "slant_rhymes": [],
-        "suffix_candidates": engine.suffix_candidates(b),
-    }
-    result["recommendations_for_a"] = engine.suggestions(a) if result["found_a"] else {
-        "word": a, "found": False,
-        "perfect_rhymes": [], "slant_rhymes": [],
-        "suffix_candidates": engine.suffix_candidates(a),
-    }
+    result["recommendations"] = (
+        engine.suggestions(b)
+        if result["found_b"]
+        else {
+            "word": b,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(b),
+        }
+    )
+    result["recommendations_for_a"] = (
+        engine.suggestions(a)
+        if result["found_a"]
+        else {
+            "word": a,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(a),
+        }
+    )
 
     if as_json:
-        click.echo(json.dumps(result, indent=2))
+        click.echo(json.dumps({**result, "hint": hint} if hint else result, indent=2))
         return
 
     verdict = result["verdict"]
@@ -87,18 +176,25 @@ def check(line_a, line_b, word_a, word_b, as_json):
 def rhymes(word, limit, as_json):
     """List perfect rhymes for a word."""
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     info = engine.lookup(word)
     if not info["found"]:
         candidates = engine.suffix_candidates(word)
-        out = {"word": word, "found": False, "perfect_rhymes": [], "suffix_candidates": candidates}
+        out = {
+            "word": word,
+            "found": False,
+            "perfect_rhymes": [],
+            "suffix_candidates": candidates,
+        }
     else:
         out = {
-            "word": word, "found": True,
+            "word": word,
+            "found": True,
             "patterns": info["patterns"],
-            "perfect_rhymes": engine.rhymes(word)[:limit],
+            "perfect_rhymes": engine.rhymes(word, limit=limit),
         }
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found in the pronunciation dictionary.")
@@ -116,21 +212,33 @@ def rhymes(word, limit, as_json):
 
 @cli.command
 @click.argument("word")
-@click.option("--max-distance", default=1, type=click.IntRange(min=1, max=2),
-              help="1 = slant, 2 = weak slant")
+@click.option(
+    "--max-distance",
+    default=1,
+    type=click.IntRange(min=1, max=2),
+    help="1 = slant, 2 = weak slant",
+)
 @click.option("--limit", default=20)
 @click.option("--json", "as_json", is_flag=True)
 def slant(word, max_distance, limit, as_json):
     """List slant rhymes for a word, ranked by pattern distance."""
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     if not engine.lookup(word)["found"]:
-        out = {"word": word, "found": False, "slant_rhymes": [],
-               "suffix_candidates": engine.suffix_candidates(word)}
+        out = {
+            "word": word,
+            "found": False,
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(word),
+        }
     else:
-        out = {"word": word, "found": True,
-               "slant_rhymes": engine.slant_rhymes(word, max_distance, limit)}
+        out = {
+            "word": word,
+            "found": True,
+            "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
+        }
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found in the pronunciation dictionary.")
@@ -152,9 +260,10 @@ def slant(word, max_distance, limit, as_json):
 def suggestions(word, limit, as_json):
     """Recommended replacement words: perfect + slant rhymes, or suffix fallback."""
     engine = get_engine()
+    hint = _warn_missing_data(engine)
     out = engine.suggestions(word, limit)
     if as_json:
-        click.echo(json.dumps(out, indent=2))
+        click.echo(json.dumps({**out, "hint": hint} if hint else out, indent=2))
         return
     if not out["found"]:
         click.echo(f"'{word}' not found; suffix-based candidates:")
@@ -171,7 +280,9 @@ def suggestions(word, limit, as_json):
 
 @cli.command
 @click.argument("file", type=click.File("r"), default="-")
-@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON diagnostics")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit machine-readable JSON diagnostics"
+)
 def lint(file, as_json):
     """Lint a lyrics file: flag end-words with no rhyme partner in their stanza.
 
@@ -180,6 +291,7 @@ def lint(file, as_json):
     (headings, '[Section]' tags, horizontal rules, lists), then checks each
     line's end-word against the others in its stanza.
     """
+    _warn_missing_data(get_engine())
     diagnostics = lint_text(file.read())
 
     if as_json:
@@ -191,13 +303,13 @@ def lint(file, as_json):
         return
 
     for d in diagnostics:
-        click.echo(f"{d['line']}:{d['col']}: {d['severity']}: {d['message']} [{d['code']}]")
+        click.echo(
+            f"{d['line']}:{d['col']}: {d['severity']}: {d['message']} [{d['code']}]"
+        )
         if d.get("suggestions"):
             labels = []
             for s in d["suggestions"][:10]:
-                if s["distance"] is None:
-                    labels.append(s["word"])
-                elif s["distance"] == 0:
+                if s["distance"] is None or s["distance"] == 0:
                     labels.append(s["word"])
                 else:
                     labels.append(f"{s['word']} (slant d{s['distance']})")
