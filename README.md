@@ -18,6 +18,12 @@ the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
   alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
   too, through...` instead of `abou, abreu, accrue`. Slant results sort by
   distance first, then frequency.
+- Slant results carry a phonetic `cost` alongside the plain edit distance, and
+  sort by distance first, then cost: substitutions are priced by how far apart
+  the phonemes actually are (ARPAbet height/backness/rounding/glide for vowels,
+  place/manner/voicing for consonants). `night` → `like, side, nice, type`
+  instead of `out, high, try`, and a near vowel swap outranks bolting on an
+  extra coda consonant.
 - Slant lookup skips candidates whose final stress differs from the query's
   (`the` as `AH0` is not a slant of `you`), plus closed-class words and
   dictionary artifacts (`a.`, `i.`, `this'`) that would otherwise rank high

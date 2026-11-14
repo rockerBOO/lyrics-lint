@@ -96,6 +96,112 @@ def final_stress(pattern: str) -> str:
     return head[-1] if STRESS_TOKEN_RE.match(head) else ""
 
 
+# ARPAbet features, used to weight substitutions. Binary Levenshtein treats
+# "UW1 -> UH1" (rounding only) exactly like "UW1 -> AA1" (height and backness),
+# which is wrong: the nearer vowel is the better slant.
+#
+#                            height  backness  round  diphthong  glide
+VOWEL_FEATURES: dict[str, tuple[int, int, int, int, int]] = {
+    "IY": (1, 1, 0, 0, 0),
+    "IH": (1, 1, 0, 0, 0),
+    "UH": (1, 3, 0, 0, 0),
+    "UW": (1, 3, 1, 0, 0),
+    "EH": (2, 1, 0, 0, 0),
+    "AH": (2, 2, 0, 0, 0),
+    "ER": (2, 2, 1, 0, 0),
+    "AO": (2, 3, 1, 0, 0),
+    "EY": (2, 1, 0, 1, 1),
+    "OW": (2, 3, 1, 1, 2),
+    "OY": (2, 3, 1, 1, 1),
+    "AE": (3, 1, 0, 0, 0),
+    "AA": (3, 3, 0, 0, 0),
+    "AY": (3, 2, 0, 1, 1),
+    "AW": (3, 2, 0, 1, 2),
+}
+
+#                            place  manner  voiced
+CONSONANT_FEATURES: dict[str, tuple[int, int, int]] = {
+    "P": (1, 1, 0),
+    "B": (1, 1, 1),
+    "M": (1, 4, 1),
+    "F": (2, 3, 0),
+    "V": (2, 3, 1),
+    "TH": (3, 3, 0),
+    "DH": (3, 3, 1),
+    "T": (4, 1, 0),
+    "D": (4, 1, 1),
+    "S": (4, 3, 0),
+    "Z": (4, 3, 1),
+    "N": (4, 4, 1),
+    "L": (4, 5, 1),
+    "R": (4, 5, 1),
+    "SH": (5, 3, 0),
+    "ZH": (5, 3, 1),
+    "CH": (5, 2, 0),
+    "JH": (5, 2, 1),
+    "Y": (6, 6, 1),
+    "K": (7, 1, 0),
+    "G": (7, 1, 1),
+    "NG": (7, 4, 1),
+    "HH": (8, 3, 0),
+    "W": (9, 6, 1),
+}
+
+# Vowels carry the rhyme, so a vowel substitution costs more than a consonant
+# one. Adding a coda phoneme (1.15) prices above a near-vowel swap (~1.12) and
+# below a distant one, so "you"/"duh" outranks "you"/"school".
+VOWEL_WEIGHT = 0.6
+CONSONANT_WEIGHT = 0.3
+INDEL_COST = 1.15
+UNRELATED_COST = 1.5
+
+
+def _base(phoneme: str) -> str:
+    """Phoneme without its stress digit."""
+    return phoneme.rstrip("012")
+
+
+def phoneme_cost(a: str, b: str) -> float:
+    """Substitution cost between two ARPAbet phonemes (0.0 = identical)."""
+    if a == b:
+        return 0.0
+    base_a, base_b = _base(a), _base(b)
+    features_a = VOWEL_FEATURES.get(base_a)
+    features_b = VOWEL_FEATURES.get(base_b)
+    if features_a is not None and features_b is not None:
+        differing = sum(x != y for x, y in zip(features_a, features_b, strict=True))
+        return round(1.0 + VOWEL_WEIGHT * differing / len(features_a), 4)
+    features_a = CONSONANT_FEATURES.get(base_a)
+    features_b = CONSONANT_FEATURES.get(base_b)
+    if features_a is not None and features_b is not None:
+        differing = sum(x != y for x, y in zip(features_a, features_b, strict=True))
+        return round(1.0 + CONSONANT_WEIGHT * differing / len(features_a), 4)
+    return UNRELATED_COST
+
+
+def pattern_cost(pattern_a: str, pattern_b: str) -> float:
+    """Feature-weighted edit cost between two rhyme patterns.
+
+    Same DP as `levenshtein`, but substitutions are priced by phonetic
+    distance, so a nearer vowel ranks above a distant one at equal distance.
+    """
+    a = pattern_a.split()
+    b = pattern_b.split()
+    previous = [i * INDEL_COST for i in range(len(b) + 1)]
+    for i, token_a in enumerate(a, 1):
+        current = [i * INDEL_COST]
+        for j, token_b in enumerate(b, 1):
+            current.append(
+                min(
+                    previous[j] + INDEL_COST,
+                    current[j - 1] + INDEL_COST,
+                    previous[j - 1] + phoneme_cost(token_a, token_b),
+                )
+            )
+        previous = current
+    return round(previous[len(b)], 4)
+
+
 def is_word_token(word: str) -> bool:
     """Whether `word` is a plain word rather than a dictionary abbreviation."""
     return WORD_TOKEN_RE.fullmatch(word) is not None
@@ -215,12 +321,17 @@ class RhymeEngine:
     def slant_rhymes(
         self, word: str, max_distance: int = 1, limit: int | None = None
     ) -> list[dict]:
-        """Slant rhymes ranked by pattern distance (1 = slant, 2 = weak)."""
+        """Slant rhymes ranked by pattern distance, then phonetic cost.
+
+        `distance` is the plain Levenshtein distance (what the verdict
+        taxonomy is built on); `cost` is the feature-weighted price of those
+        edits, so the nearest vowel ranks first within a distance.
+        """
         info = self.lookup(word)
         if not info["found"]:
             return []
         stress = {final_stress(p) for p in info["patterns"]}
-        out: dict[str, int] = {}
+        out: dict[str, tuple[int, float]] = {}
         for pat in info["patterns"]:
             for other in self.unique_patterns:
                 if other == pat:
@@ -231,19 +342,27 @@ class RhymeEngine:
                 if final_stress(other) not in stress:
                     continue
                 dist = levenshtein(pat.split(), other.split())
-                if dist <= max_distance:
-                    for w in self.pattern_words.get(other, set()):
-                        if (
-                            w == word.lower()
-                            or w in FUNCTION_WORDS
-                            or not is_word_token(w)
-                        ):
-                            continue
-                        out[w] = min(out.get(w, 99), dist)
-        ranked = sorted(out.items(), key=lambda kv: (kv[1], -frequency(kv[0]), kv[0]))
+                if dist > max_distance:
+                    continue
+                cost = pattern_cost(pat, other)
+                for w in self.pattern_words.get(other, set()):
+                    if w == word.lower() or w in FUNCTION_WORDS or not is_word_token(w):
+                        continue
+                    previous = out.get(w)
+                    out[w] = (
+                        (dist, cost)
+                        if previous is None
+                        else min(previous, (dist, cost))
+                    )
+        ranked = sorted(
+            out.items(),
+            key=lambda kv: (kv[1][0], kv[1][1], -frequency(kv[0]), kv[0]),
+        )
         if limit:
             ranked = ranked[:limit]
-        return [{"word": w, "distance": d} for w, d in ranked]
+        return [
+            {"word": w, "distance": dist, "cost": cost} for w, (dist, cost) in ranked
+        ]
 
     # -------------------------------------------------------- pair checking
 

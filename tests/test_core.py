@@ -3,7 +3,14 @@
 import pytest
 from wordfreq import zipf_frequency
 
-from lyrics_lint.core import FUNCTION_WORDS, RhymeEngine, final_stress, get_engine
+from lyrics_lint.core import (
+    FUNCTION_WORDS,
+    RhymeEngine,
+    final_stress,
+    get_engine,
+    pattern_cost,
+    phoneme_cost,
+)
 
 
 @pytest.fixture(scope="module")
@@ -46,14 +53,6 @@ def test_slant_rhymes_rank_common_words_first(engine):
     assert "aaliyah" not in words
     assert "abaco" not in words
     assert all(zipf_frequency(w, "en") >= 3.0 for w in words)
-
-
-def test_slant_rhymes_sort_by_distance_then_frequency(engine):
-    rows = engine.slant_rhymes("you", max_distance=2, limit=40)
-    assert rows == sorted(
-        rows,
-        key=lambda r: (r["distance"], -zipf_frequency(r["word"], "en"), r["word"]),
-    )
 
 
 def test_slant_rhymes_require_matching_final_stress(engine):
@@ -163,3 +162,58 @@ def test_possessive_apostrophe_artifacts_are_not_suggested(engine):
     words = [s["word"] for s in engine.slant_rhymes("fizz", max_distance=1, limit=50)]
     assert words
     assert not any(w.endswith("'") or w.startswith("'") for w in words)
+
+
+# --------------------------------------------------- phoneme-aware slant cost
+
+
+def test_identical_phonemes_have_zero_cost():
+    assert phoneme_cost("UW1", "UW1") == 0.0
+
+
+def test_rounding_difference_costs_less_than_backness_difference():
+    # UW is high back rounded; UH is high back unrounded (1 feature apart),
+    # IH is high front unrounded (2 features apart).
+    assert phoneme_cost("UW1", "UH1") < phoneme_cost("UW1", "IH1")
+
+
+def test_vowel_height_difference_costs_more_than_voicing():
+    # Vowel substitutions dominate rhyme perception, so they cost more than a
+    # consonant pair that only differs in voicing (Z vs S).
+    assert phoneme_cost("IH1", "EH1") > phoneme_cost("Z", "S")
+
+
+def test_voicing_only_consonant_pair_is_cheapest_consonant_pair():
+    assert phoneme_cost("Z", "S") < phoneme_cost("Z", "M")
+
+
+def test_pattern_cost_is_symmetric_and_zero_for_identical_patterns():
+    assert pattern_cost("IH1 Z", "IH1 Z") == 0.0
+    assert pattern_cost("IH1 Z", "EH1 S") == pattern_cost("EH1 S", "IH1 Z")
+
+
+def test_slant_rhymes_prefer_the_nearer_vowel(engine):
+    # Both "duh" (UH1) and "way" (EY1) are distance 1 from "you" (UW1), but UH
+    # is one feature from UW while EY differs in height and backness.
+    words = [s["word"] for s in engine.slant_rhymes("you", max_distance=1, limit=None)]
+    assert words.index("duh") < words.index("way")
+
+
+def test_slant_rhymes_report_cost_and_sort_by_it(engine):
+    rows = engine.slant_rhymes("you", max_distance=2, limit=40)
+    assert all("cost" in row for row in rows)
+    assert rows == sorted(
+        rows,
+        key=lambda r: (
+            r["distance"],
+            r["cost"],
+            -zipf_frequency(r["word"], "en"),
+            r["word"],
+        ),
+    )
+
+
+def test_near_vowel_swap_costs_less_than_added_coda():
+    # AO is one feature from UW (height), so swapping it is a milder slant than
+    # closing the syllable with an extra consonant, which changes the shape.
+    assert pattern_cost("UW1", "AO1") < pattern_cost("UW1", "UW1 L")
