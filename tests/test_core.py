@@ -347,10 +347,10 @@ def test_engine_module_imports_no_dataset_at_module_level():
 
 
 def test_declared_dependencies_are_code_only():
-    import tomllib
-
-    project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-    declared = " ".join(project["project"]["dependencies"]).lower()
+    # Plain string handling, not tomllib: that is 3.11+, and this project
+    # supports 3.10, where the test must still run.
+    text = pathlib.Path("pyproject.toml").read_text()
+    declared = text.split("dependencies = [", 1)[1].split("]", 1)[0].lower()
     for dataset_package in ("cmudict", "wordfreq", "g2p-en"):
         assert dataset_package not in declared
 
