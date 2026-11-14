@@ -51,6 +51,9 @@ def lint_text(text: str) -> list[dict]:
 
     - unknown-word: the word isn't in the pronunciation dictionary, so its
       rhyme can't be verified. Suggestions fall back to suffix candidates.
+    - g2p-word: the word isn't in the dictionary either, but a guess was made
+      from its spelling, so the rhyme check ran on a pronunciation nobody
+      vetted. Reported at info severity, named so the guess stays visible.
     - no-rhyme-partner: the word isn't within MAX_SLANT_DISTANCE of any
       other end-word in the stanza. Suggestions are replacement words that
       rhyme with the stanza's dominant (largest) rhyme group, since that's
@@ -72,6 +75,20 @@ def lint_text(text: str) -> list[dict]:
             entries.append((lineno, col, end_col, word, engine.lookup(word)))
 
         for lineno, col, end_col, word, info in entries:
+            if info["found"] and info["source"] == "g2p":
+                diagnostics.append(
+                    {
+                        "line": lineno,
+                        "col": col,
+                        "end_col": end_col,
+                        "severity": "info",
+                        "code": "g2p-word",
+                        "message": (
+                            f"'{word}' not in pronunciation dictionary — "
+                            f"guessed {info['pronunciations'][0]} from spelling"
+                        ),
+                    }
+                )
             if not info["found"]:
                 diagnostics.append(
                     {

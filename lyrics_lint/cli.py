@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import json
+import os
 
 import click
 
-from .core import get_engine
+from .core import G2P_ENV_VAR, get_engine
 from .lines import end_word
 from .lint import lint_text
 
 
 @click.group()
 @click.version_option()
-def cli():
+@click.option(
+    "--g2p",
+    "use_g2p",
+    is_flag=True,
+    help="Guess pronunciations for words missing from the dictionary (slower first run).",
+)
+def cli(use_g2p):
     """Lyrics rhyme linter: check pairs, find rhymes, and suggest replacements."""
+    if use_g2p:
+        os.environ[G2P_ENV_VAR] = "1"
 
 
 @cli.command

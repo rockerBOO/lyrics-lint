@@ -80,3 +80,21 @@ def test_unknown_word_includes_suffix_candidates_as_suggestions():
     d = next(d for d in diagnostics if d["code"] == "unknown-word")
     assert d["suggestions"]
     assert all(s["distance"] is None for s in d["suggestions"])
+
+
+def test_guessed_pronunciation_is_reported_as_low_severity(monkeypatch):
+    """A word the G2P backend guesses is not silently treated as known."""
+    from lyrics_lint.core import RhymeEngine
+
+    engine = RhymeEngine(
+        overrides=None,
+        g2p=lambda word: ["K", "R", "AH1", "F"] if word == "cruff" else None,
+    )
+    monkeypatch.setattr("lyrics_lint.lint.get_engine", lambda: engine)
+
+    diagnostics = lint_text("you looking kinda cruff\ni believe in you\n")
+    guessed = [d for d in diagnostics if d["code"] == "g2p-word"]
+    assert len(guessed) == 1
+    assert guessed[0]["severity"] == "info"
+    assert "guessed" in guessed[0]["message"]
+    assert not [d for d in diagnostics if d["code"] == "unknown-word"]

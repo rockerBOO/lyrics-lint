@@ -247,3 +247,65 @@ def test_multisyllable_query_ranks_richer_rhymes_first(engine):
 def test_monosyllable_query_keeps_frequency_order(engine):
     # No pre-rhyme syllable exists, so nothing is reordered.
     assert engine.rhymes("you", limit=3) == ["to", "do", "who"]
+
+
+# ------------------------------------------------- grapheme-to-phoneme fallback
+
+
+@pytest.fixture
+def fake_g2p():
+    """Deterministic stand-in for the real G2P backend: only 'cruff' resolves."""
+    calls = []
+
+    def g2p(word):
+        calls.append(word)
+        return ["K", "R", "AH1", "F"] if word == "cruff" else None
+
+    g2p.calls = calls
+    return g2p
+
+
+def test_g2p_resolves_word_missing_from_cmudict(fake_g2p):
+    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+    info = eng.lookup("cruff")
+    assert info["found"] is True
+    assert info["source"] == "g2p"
+    assert info["patterns"] == ["AH1 F"]
+    assert "stuff" in eng.rhymes("cruff")
+
+
+def test_g2p_result_is_cached(fake_g2p):
+    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+    eng.lookup("cruff")
+    eng.lookup("cruff")
+    assert fake_g2p.calls == ["cruff"]
+
+
+def test_g2p_disabled_leaves_word_unknown():
+    eng = RhymeEngine(overrides=None, g2p=None)
+    assert eng.lookup("cruff")["found"] is False
+    assert eng.lookup("cruff")["source"] is None
+
+
+def test_g2p_returning_none_leaves_word_unknown():
+    eng = RhymeEngine(overrides=None, g2p=lambda _word: None)
+    assert eng.lookup("cruff")["found"] is False
+
+
+def test_cmudict_word_reports_cmudict_source(engine):
+    assert engine.lookup("you")["source"] == "cmudict"
+
+
+def test_override_word_reports_override_source(tmp_path):
+    path = tmp_path / "overrides.txt"
+    path.write_text("rizz  R IH1 Z\n")
+    eng = RhymeEngine(overrides=path)
+    assert eng.lookup("rizz")["source"] == "override"
+
+
+def test_g2p_word_participates_in_rhyme_lookup_once_resolved(fake_g2p):
+    # Resolution is lazy: a g2p word joins the pattern index when it is first
+    # looked up, so it can be a rhyme partner from then on.
+    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+    assert "stuff" in eng.rhymes("cruff")
+    assert "cruff" in eng.rhymes("stuff")

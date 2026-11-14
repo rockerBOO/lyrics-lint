@@ -10,8 +10,10 @@ distance (1 = slant, 2 = weak slant).
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 STRESS_TOKEN_RE = re.compile(r"^[A-Z]{2}[12]$")
@@ -65,6 +67,40 @@ def frequency(word: str) -> float:
         else:
             _FREQUENCY = lambda w: zipf_frequency(w, "en")  # noqa: E731
     return _FREQUENCY(word)
+
+
+_G2P = None
+
+# Every token the ARPAbet inventories above recognise.
+PHONEMES = frozenset(VOWEL_FEATURE_NAMES := ()) if False else frozenset()
+
+
+def _valid_phoneme(token: str) -> bool:
+    return _base(token) in VOWEL_FEATURES or _base(token) in CONSONANT_FEATURES
+
+
+def default_g2p(word: str) -> list[str] | None:
+    """Guess ARPAbet phonemes for a word cmudict does not know.
+
+    Backed by `g2p_en` (a pure-Python neural grapheme-to-phoneme model), which
+    downloads its NLTK data on first use, so it is only initialised when an
+    unknown word is actually looked up. Returns None when the backend is not
+    installed. `RhymeEngine(g2p=None)` skips this entirely.
+    """
+    global _G2P
+    if _G2P is None:
+        try:
+            from g2p_en import G2p
+        except ImportError:  # pragma: no cover - optional dependency
+            _G2P = False
+        else:
+            _G2P = G2p()
+    if _G2P is False:
+        return None
+    tokens = [t for t in _G2P(word) if _valid_phoneme(t)]
+    if not tokens:
+        return None
+    return tokens
 
 
 def levenshtein(a: list[str], b: list[str]) -> int:
@@ -238,21 +274,30 @@ def rhyme_pattern(pronunciation: str) -> str:
 class RhymeEngine:
     """In-memory rhyme index built from the CMU Pronouncing Dictionary."""
 
-    def __init__(self, overrides: str | Path | None = DEFAULT_OVERRIDES) -> None:
+    def __init__(
+        self,
+        overrides: str | Path | None = DEFAULT_OVERRIDES,
+        g2p: Callable[[str], list[str] | None] | None = None,
+    ) -> None:
         import cmudict
 
         self.dict: dict[str, list[str]] = {}
         self.pattern_words: dict[str, set[str]] = defaultdict(set)
+        # Where each pronunciation came from: cmudict / override / g2p.
+        self.sources: dict[str, str] = {}
+        self.unique_patterns: list[str] = []
+        self.g2p = g2p
 
         for word, pron_list in cmudict.dict().items():
             w = word.lower()
             pronunciations = [" ".join(p) for p in pron_list]
             self.dict[w] = pronunciations
+            self.sources[w] = "cmudict"
             for pron in pronunciations:
                 self.pattern_words[rhyme_pattern(pron)].add(w)
 
         self._load_overrides(overrides)
-        self.unique_patterns: list[str] = list(self.pattern_words.keys())
+        self.unique_patterns = list(self.pattern_words.keys())
 
     def _load_overrides(self, path: str | Path | None) -> None:
         """Merge a CMUdict-format override file into the index.
@@ -289,9 +334,14 @@ class RhymeEngine:
                 )
 
             self.dict.setdefault(word, []).append(phonemes)
-            self.pattern_words[rhyme_pattern(phonemes)].add(word)
+            self.sources[word] = "override"
+            pattern = rhyme_pattern(phonemes)
+            self.pattern_words[pattern].add(word)
+            if pattern not in self.unique_patterns:
+                self.unique_patterns.append(pattern)
 
     def _remove(self, word: str) -> None:
+        self.sources.pop(word, None)
         for pron in self.dict.pop(word, []):
             pattern = rhyme_pattern(pron)
             words = self.pattern_words.get(pattern)
@@ -306,13 +356,32 @@ class RhymeEngine:
         pronunciations = self.dict.get(word.lower(), [])
         return [rhyme_pattern(p) for p in pronunciations]
 
+    def _resolve(self, word: str) -> list[str]:
+        """Pronunciations for `word`, asking the G2P backend if needed."""
+        pronunciations = self.dict.get(word)
+        if pronunciations is not None or self.g2p is None:
+            return pronunciations or []
+        tokens = self.g2p(word)
+        if not tokens:
+            return []
+        pronunciation = " ".join(tokens)
+        self.dict[word] = [pronunciation]
+        self.sources[word] = "g2p"
+        pattern = rhyme_pattern(pronunciation)
+        self.pattern_words[pattern].add(word)
+        if pattern not in self.unique_patterns:
+            self.unique_patterns.append(pattern)
+        return [pronunciation]
+
     def lookup(self, word: str) -> dict:
-        """Full info for a word: pronunciations + rhyme patterns."""
-        pronunciations = self.dict.get(word.lower(), [])
+        """Full info for a word: pronunciations, rhyme patterns, provenance."""
+        w = word.lower()
+        pronunciations = self._resolve(w)
         patterns = [rhyme_pattern(p) for p in pronunciations]
         return {
-            "word": word.lower(),
+            "word": w,
             "found": bool(pronunciations),
+            "source": self.sources.get(w) if pronunciations else None,
             "pronunciations": pronunciations,
             "patterns": patterns,
         }
@@ -512,9 +581,20 @@ class RhymeEngine:
 
 _ENGINE: RhymeEngine | None = None
 
+G2P_ENV_VAR = "LYRICS_LINT_G2P"
+
+
+def g2p_enabled() -> bool:
+    """Whether guessed pronunciations are enabled via the environment.
+
+    Off by default: the G2P backend imports a neural model (and, on first use,
+    downloads NLTK data), so it is opt-in rather than a startup cost.
+    """
+    return os.environ.get(G2P_ENV_VAR, "").strip().lower() in {"1", "true", "yes"}
+
 
 def get_engine() -> RhymeEngine:
     global _ENGINE
     if _ENGINE is None:
-        _ENGINE = RhymeEngine()
+        _ENGINE = RhymeEngine(g2p=default_g2p if g2p_enabled() else None)
     return _ENGINE

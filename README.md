@@ -45,6 +45,21 @@ rizz        R IH1 Z            # add a pronunciation (appended, never replaced)
 -gray       G R EY1           # a leading '-' removes a word from the dictionary
 ```
 
+For words you don't want to hand-write, `--g2p` guesses a pronunciation from
+the spelling with a neural grapheme-to-phoneme model (`g2p_en`). It is opt-in
+because the model is slow to initialise and downloads NLTK data on first use:
+
+```bash
+uv run lyrics --g2p check "you looking kinda cruff" "i believe in you"
+uv run lyrics --g2p lint songs/eleven.md
+```
+
+Guessed words are labelled rather than treated as known: `check` reports the
+verdict it computed from the guess, and `lint` emits a `g2p-word` info
+diagnostic (`'cruff' — guessed K R AH1 F from spelling`) so a spelling-derived
+rhyme never passes silently. Set `LYRICS_LINT_G2P=1` to enable it for the MCP
+server.
+
 Each added pronunciation **must** carry a stress digit (`1` or `2`) on a vowel —
 without one the rhyme pattern can't be derived and loading fails loudly rather
 than silently mis-grouping the word. Homographs keep their existing readings, so
@@ -123,7 +138,7 @@ Exposes four tools over stdio:
 |---------------|----------------------------------------------------------------|
 | `check_pair`  | Check two lines' end-words; verdict + issues + recommendations |
 | `rhymes`      | Perfect rhymes for a word (suffix fallback if unknown)         |
-| `slant_rhymes`| Slant rhymes ranked by pattern distance                        |
+| `slant_rhymes`| Slant rhymes ranked by pattern distance, then phonetic cost    |
 | `suggestions` | Replacement words: perfect + slant + suffix candidates         |
 
 Run it:
@@ -141,7 +156,8 @@ from git, no local clone or path editing needed (requires `uv` and `git`):
 {
   "mcpServers": {
     "lyrics-lint": {
-      "command": ["uvx", "--from", "git+https://github.com/rockerBOO/lyrics-lint", "lyrics", "mcp"]
+      "command": ["uvx", "--from", "git+https://github.com/rockerBOO/lyrics-lint", "lyrics", "mcp"],
+      "env": { "LYRICS_LINT_G2P": "1" }
     }
   }
 }
