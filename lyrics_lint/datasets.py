@@ -95,8 +95,9 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def status(datasets: Sequence[Dataset] = DATASETS) -> list[dict]:
+def status(datasets: Sequence[Dataset] | None = None) -> list[dict]:
     """Report each dataset's presence and whether its bytes still verify."""
+    datasets = DATASETS if datasets is None else datasets
     entries = []
     for dataset in datasets:
         path = data_dir() / dataset.filename
@@ -136,13 +137,14 @@ def missing_hint() -> str | None:
 def fetch(
     names: Iterable[str] | None = None,
     force: bool = False,
-    datasets: Sequence[Dataset] = DATASETS,
+    datasets: Sequence[Dataset] | None = None,
 ) -> list[dict]:
     """Download datasets into the cache, verifying each pinned sha256.
 
     Writes to `<target>.part` and renames on success, so an interrupted or
     corrupt download never leaves a file that looks usable.
     """
+    datasets = DATASETS if datasets is None else datasets
     by_name = {d.name: d for d in datasets}
     wanted = list(by_name) if names is None else list(names)
     unknown = [name for name in wanted if name not in by_name]

@@ -287,7 +287,9 @@ class RhymeEngine:
         self.g2p = g2p
         self.frequency = dataset_frequency() if frequency is None else frequency
 
-        for word, pronunciations in (dictionary or dataset_dictionary()).items():
+        if dictionary is None:
+            dictionary = dataset_dictionary()
+        for word, pronunciations in dictionary.items():
             w = word.lower()
             self.dict[w] = list(pronunciations)
             self.sources[w] = "dataset"

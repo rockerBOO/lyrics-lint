@@ -7,6 +7,7 @@ import os
 
 import click
 
+from . import datasets
 from .core import G2P_ENV_VAR, get_engine
 from .lines import end_word
 from .lint import lint_text
@@ -26,6 +27,68 @@ def cli(use_g2p):
         os.environ[G2P_ENV_VAR] = "1"
 
 
+def _warn_missing_data() -> None:
+    """Point at `lyrics data fetch` when there is nothing to rhyme with."""
+    hint = datasets.missing_hint()
+    if hint is not None:
+        click.echo(f"warning: {hint}", err=True)
+
+
+@cli.group("data")
+def data():
+    """Manage the optional speech datasets (nothing ships in the package)."""
+
+
+@data.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON")
+def data_status(as_json):
+    """Show which datasets are present and whether they still verify."""
+    entries = datasets.status()
+    if as_json:
+        click.echo(json.dumps(entries, indent=2))
+        return
+    for entry in entries:
+        if entry["verified"]:
+            state = "ok"
+        elif entry["present"]:
+            state = "unverified"
+        else:
+            state = "missing"
+        click.echo(
+            f"{entry['name']:<12} {state:<11} {entry['bytes']:>9} bytes  "
+            f"{entry['licence']:<14} {entry['path']}"
+        )
+
+
+@data.command("fetch")
+@click.argument("names", nargs=-1)
+@click.option("--force", is_flag=True, help="Re-download even if the file verifies")
+def data_fetch(names, force):
+    """Download datasets into the cache and verify their sha256."""
+    try:
+        results = datasets.fetch(names or None, force=force)
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for entry in results:
+        action = "fetched" if entry["fetched"] else "already present"
+        click.echo(
+            f"{entry['name']:<12} {action:<16} {entry['bytes']:>9} bytes  {entry['path']}"
+        )
+
+
+@data.command("path")
+@click.argument("name", required=False)
+def data_path(name):
+    """Print the cache directory, or the path of one dataset."""
+    if name is None:
+        click.echo(datasets.data_dir())
+        return
+    try:
+        click.echo(datasets.dataset_path(name))
+    except KeyError as exc:
+        raise click.ClickException(f"unknown dataset: {name}") from exc
+
+
 @cli.command
 @click.argument("line_a")
 @click.argument("line_b")
@@ -37,6 +100,7 @@ def check(line_a, line_b, word_a, word_b, as_json):
 
     End-words are extracted automatically; pass --word-a/--word-b to override.
     """
+    _warn_missing_data()
     engine = get_engine()
     a = word_a or end_word(line_a)
     b = word_b or end_word(line_b)
@@ -106,6 +170,7 @@ def check(line_a, line_b, word_a, word_b, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def rhymes(word, limit, as_json):
     """List perfect rhymes for a word."""
+    _warn_missing_data()
     engine = get_engine()
     info = engine.lookup(word)
     if not info["found"]:
@@ -152,6 +217,7 @@ def rhymes(word, limit, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def slant(word, max_distance, limit, as_json):
     """List slant rhymes for a word, ranked by pattern distance."""
+    _warn_missing_data()
     engine = get_engine()
     if not engine.lookup(word)["found"]:
         out = {
@@ -188,6 +254,7 @@ def slant(word, max_distance, limit, as_json):
 @click.option("--json", "as_json", is_flag=True)
 def suggestions(word, limit, as_json):
     """Recommended replacement words: perfect + slant rhymes, or suffix fallback."""
+    _warn_missing_data()
     engine = get_engine()
     out = engine.suggestions(word, limit)
     if as_json:
@@ -219,6 +286,7 @@ def lint(file, as_json):
     (headings, '[Section]' tags, horizontal rules, lists), then checks each
     line's end-word against the others in its stanza.
     """
+    _warn_missing_data()
     diagnostics = lint_text(file.read())
 
     if as_json:

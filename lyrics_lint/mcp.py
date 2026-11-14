@@ -10,10 +10,19 @@ from typing import Annotated
 from fastmcp import FastMCP
 from pydantic import Field
 
+from . import datasets
 from .core import get_engine
 from .lines import end_word
 
 mcp = FastMCP("lyrics-lint")
+
+
+def _hint(result: dict) -> dict:
+    """Attach the fetch hint to a tool result when no dictionary is loaded."""
+    hint = datasets.missing_hint()
+    if hint is not None:
+        result["hint"] = hint
+    return result
 
 
 @mcp.tool()
@@ -59,7 +68,7 @@ def check_pair(
             "suffix_candidates": engine.suffix_candidates(a),
         }
     )
-    return result
+    return _hint(result)
 
 
 @mcp.tool()
@@ -74,18 +83,22 @@ def rhymes(
     engine = get_engine()
     info = engine.lookup(word)
     if not info["found"]:
-        return {
+        return _hint(
+            {
+                "word": word,
+                "found": False,
+                "perfect_rhymes": [],
+                "suffix_candidates": engine.suffix_candidates(word),
+            }
+        )
+    return _hint(
+        {
             "word": word,
-            "found": False,
-            "perfect_rhymes": [],
-            "suffix_candidates": engine.suffix_candidates(word),
+            "found": True,
+            "patterns": info["patterns"],
+            "perfect_rhymes": engine.rhymes(word, limit=limit),
         }
-    return {
-        "word": word,
-        "found": True,
-        "patterns": info["patterns"],
-        "perfect_rhymes": engine.rhymes(word, limit=limit),
-    }
+    )
 
 
 @mcp.tool()
@@ -99,17 +112,21 @@ def slant_rhymes(
     """List slant rhymes for a word, ranked by pattern distance."""
     engine = get_engine()
     if not engine.lookup(word)["found"]:
-        return {
+        return _hint(
+            {
+                "word": word,
+                "found": False,
+                "slant_rhymes": [],
+                "suffix_candidates": engine.suffix_candidates(word),
+            }
+        )
+    return _hint(
+        {
             "word": word,
-            "found": False,
-            "slant_rhymes": [],
-            "suffix_candidates": engine.suffix_candidates(word),
+            "found": True,
+            "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
         }
-    return {
-        "word": word,
-        "found": True,
-        "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
-    }
+    )
 
 
 @mcp.tool()
@@ -127,4 +144,4 @@ def suggestions(
     is unknown or has no rhymes — suffix-based candidates drawn from the last
     part of the word.
     """
-    return get_engine().suggestions(word, limit)
+    return _hint(get_engine().suggestions(word, limit))
