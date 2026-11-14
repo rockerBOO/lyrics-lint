@@ -73,18 +73,22 @@ def lint_text(text: str) -> list[dict]:
 
         for lineno, col, end_col, word, info in entries:
             if not info["found"]:
-                diagnostics.append({
-                    "line": lineno,
-                    "col": col,
-                    "end_col": end_col,
-                    "severity": "info",
-                    "code": "unknown-word",
-                    "message": f"'{word}' not in pronunciation dictionary — rhyme unverified",
-                    "suggestions": [
-                        {"word": w, "distance": None}
-                        for w in engine.suffix_candidates(word, limit=SUGGESTION_LIMIT)
-                    ],
-                })
+                diagnostics.append(
+                    {
+                        "line": lineno,
+                        "col": col,
+                        "end_col": end_col,
+                        "severity": "info",
+                        "code": "unknown-word",
+                        "message": f"'{word}' not in pronunciation dictionary — rhyme unverified",
+                        "suggestions": [
+                            {"word": w, "distance": None}
+                            for w in engine.suffix_candidates(
+                                word, limit=SUGGESTION_LIMIT
+                            )
+                        ],
+                    }
+                )
 
         found = [(i, e) for i, e in enumerate(entries) if e[4]["found"]]
         if len(found) < 2:
@@ -98,7 +102,7 @@ def lint_text(text: str) -> list[dict]:
             for idx in cluster:
                 cluster_of[idx] = cluster
 
-        for pos, (_, (lineno, col, end_col, word, info)) in enumerate(found):
+        for pos, (_, (lineno, col, end_col, word, _info)) in enumerate(found):
             own_cluster = cluster_of[pos]
             if len(own_cluster) > 1:
                 continue  # has at least one rhyme partner
@@ -110,7 +114,9 @@ def lint_text(text: str) -> list[dict]:
             # the cluster, so a weak-slant outlier doesn't skew suggestions.
             target_word = min(
                 target_words,
-                key=lambda w: sum(_distance(engine, w, other) for other in target_words),
+                key=lambda w: sum(
+                    _distance(engine, w, other) for other in target_words
+                ),
             )
             best = _distance(engine, word, target_word)
 
@@ -126,18 +132,20 @@ def lint_text(text: str) -> list[dict]:
                 for s in target["slant_rhymes"]
             ]
             suggestions = suggestions[:SUGGESTION_LIMIT]
-            diagnostics.append({
-                "line": lineno,
-                "col": col,
-                "end_col": end_col,
-                "severity": "warning",
-                "code": "no-rhyme-partner",
-                "message": (
-                    f"'{word}' has no rhyme partner in this stanza "
-                    f"(closest pattern distance {best})"
-                ),
-                "suggestions": suggestions,
-            })
+            diagnostics.append(
+                {
+                    "line": lineno,
+                    "col": col,
+                    "end_col": end_col,
+                    "severity": "warning",
+                    "code": "no-rhyme-partner",
+                    "message": (
+                        f"'{word}' has no rhyme partner in this stanza "
+                        f"(closest pattern distance {best})"
+                    ),
+                    "suggestions": suggestions,
+                }
+            )
 
     diagnostics.sort(key=lambda d: (d["line"], d["col"]))
     return diagnostics

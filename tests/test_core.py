@@ -46,6 +46,8 @@ def test_slant_rhymes_rank_common_words_first(engine):
     assert "aaliyah" not in words
     assert "abaco" not in words
     assert all(zipf_frequency(w, "en") >= 3.0 for w in words)
+
+
 def test_slant_rhymes_sort_by_distance_then_frequency(engine):
     rows = engine.slant_rhymes("you", max_distance=2, limit=40)
     assert rows == sorted(

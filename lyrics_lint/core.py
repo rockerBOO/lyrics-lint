@@ -45,6 +45,11 @@ DEFAULT_OVERRIDES = Path(__file__).resolve().parent / "data" / "pron_overrides.t
 _FREQUENCY = None
 
 
+def _no_frequency(_word: str) -> float:
+    """Stub ranking function used when `wordfreq` is not installed."""
+    return 0.0
+
+
 def frequency(word: str) -> float:
     """Zipf frequency of `word` in English (0.0 = unknown/very rare).
 
@@ -56,9 +61,9 @@ def frequency(word: str) -> float:
         try:
             from wordfreq import zipf_frequency
         except ImportError:  # pragma: no cover - wordfreq is a hard dependency
-            _FREQUENCY = lambda _w: 0.0
+            _FREQUENCY = _no_frequency
         else:
-            _FREQUENCY = lambda w: zipf_frequency(w, "en")
+            _FREQUENCY = lambda w: zipf_frequency(w, "en")  # noqa: E731
     return _FREQUENCY(word)
 
 
@@ -74,9 +79,13 @@ def levenshtein(a: list[str], b: list[str]) -> int:
     for i, ta in enumerate(a, 1):
         cur = [i]
         for j, tb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1,        # deletion
-                           cur[j - 1] + 1,     # insertion
-                           prev[j - 1] + (0 if ta == tb else 1)))  # substitution
+            cur.append(
+                min(
+                    prev[j] + 1,  # deletion
+                    cur[j - 1] + 1,  # insertion
+                    prev[j - 1] + (0 if ta == tb else 1),
+                )
+            )  # substitution
         prev = cur
     return prev[len(b)]
 
@@ -231,9 +240,7 @@ class RhymeEngine:
                         ):
                             continue
                         out[w] = min(out.get(w, 99), dist)
-        ranked = sorted(
-            out.items(), key=lambda kv: (kv[1], -frequency(kv[0]), kv[0])
-        )
+        ranked = sorted(out.items(), key=lambda kv: (kv[1], -frequency(kv[0]), kv[0]))
         if limit:
             ranked = ranked[:limit]
         return [{"word": w, "distance": d} for w, d in ranked]
@@ -257,19 +264,16 @@ class RhymeEngine:
         }
 
         if not (pa["found"] and pb["found"]):
+            issues = []
+            if not pa["found"]:
+                issues.append(f"'{a}' not found in pronunciation dictionary")
+            if not pb["found"]:
+                issues.append(f"'{b}' not found in pronunciation dictionary")
             result.update(
                 verdict="unknown",
                 best_distance=None,
                 distance=None,
-                issues=(
-                    [f"'{a}' not found in pronunciation dictionary"]
-                    if not pa["found"]
-                    else [],
-                ) + (
-                    [f"'{b}' not found in pronunciation dictionary"]
-                    if not pb["found"]
-                    else [],
-                ),
+                issues=issues,
             )
             return result
 
@@ -287,20 +291,28 @@ class RhymeEngine:
         elif dist == 1:
             verdict = "slant"
             issues = [
-                "Slant rhyme: rhyme patterns differ by 1 phoneme "
-                f"({pat_a!r} vs {pat_b!r}). Acceptable, but a perfect rhyme would land harder."
+                (
+                    "Slant rhyme: rhyme patterns differ by 1 phoneme "
+                    f"({pat_a!r} vs {pat_b!r}). "
+                    "Acceptable, but a perfect rhyme would land harder."
+                )
             ]
         elif dist == 2:
             verdict = "weak_slant"
             issues = [
-                "Weak slant rhyme: patterns differ by 2 phonemes "
-                f"({pat_a!r} vs {pat_b!r}). Barely a rhyme; consider replacing a word."
+                (
+                    "Weak slant rhyme: patterns differ by 2 phonemes "
+                    f"({pat_a!r} vs {pat_b!r}). "
+                    "Barely a rhyme; consider replacing a word."
+                )
             ]
         else:
             verdict = "no_rhyme"
             issues = [
-                "No rhyme: patterns differ by "
-                f"{dist} phonemes ({pat_a!r} vs {pat_b!r})."
+                (
+                    "No rhyme: patterns differ by "
+                    f"{dist} phonemes ({pat_a!r} vs {pat_b!r})."
+                )
             ]
 
         result.update(verdict=verdict, distance=dist, issues=issues)
@@ -308,16 +320,16 @@ class RhymeEngine:
 
     # ------------------------------------------------------ fallback (suffix)
 
-    def suffix_candidates(self, word: str, min_suffix: int = 3, limit: int = 20) -> list[str]:
+    def suffix_candidates(
+        self, word: str, min_suffix: int = 3, limit: int = 20
+    ) -> list[str]:
         """When a word has no known rhymes, fall back to words sharing its
         final suffix (last 3+ characters) as assonance-style candidates."""
         w = word.lower()
         candidates = []
         for suffix_len in range(min_suffix, min(len(w), 10) + 1):
             suffix = w[-suffix_len:]
-            matches = [
-                x for x in self.dict if x.endswith(suffix)
-            ]
+            matches = [x for x in self.dict if x.endswith(suffix)]
             if matches:
                 candidates = sorted(set(matches))
                 break

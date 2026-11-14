@@ -44,7 +44,9 @@ def test_single_line_stanza_produces_no_diagnostics():
 
 
 def test_diagnostic_column_points_at_end_word():
-    text = "paying the cost\ni love the color purple\ndon't follow me\ni'm getting lost\n"
+    text = (
+        "paying the cost\ni love the color purple\ndon't follow me\ni'm getting lost\n"
+    )
     diagnostics = lint_text(text)
     d = next(d for d in diagnostics if d["line"] == 2)
     line = "i love the color purple"

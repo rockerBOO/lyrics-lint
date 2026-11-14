@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 
 import click
 
@@ -34,16 +33,28 @@ def check(line_a, line_b, word_a, word_b, as_json):
     b = word_b or end_word(line_b)
     result = engine.check_pair(a, b)
     # Attach recommendations so the linter can suggest fixes.
-    result["recommendations"] = engine.suggestions(b) if result["found_b"] else {
-        "word": b, "found": False,
-        "perfect_rhymes": [], "slant_rhymes": [],
-        "suffix_candidates": engine.suffix_candidates(b),
-    }
-    result["recommendations_for_a"] = engine.suggestions(a) if result["found_a"] else {
-        "word": a, "found": False,
-        "perfect_rhymes": [], "slant_rhymes": [],
-        "suffix_candidates": engine.suffix_candidates(a),
-    }
+    result["recommendations"] = (
+        engine.suggestions(b)
+        if result["found_b"]
+        else {
+            "word": b,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(b),
+        }
+    )
+    result["recommendations_for_a"] = (
+        engine.suggestions(a)
+        if result["found_a"]
+        else {
+            "word": a,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(a),
+        }
+    )
 
     if as_json:
         click.echo(json.dumps(result, indent=2))
@@ -90,10 +101,16 @@ def rhymes(word, limit, as_json):
     info = engine.lookup(word)
     if not info["found"]:
         candidates = engine.suffix_candidates(word)
-        out = {"word": word, "found": False, "perfect_rhymes": [], "suffix_candidates": candidates}
+        out = {
+            "word": word,
+            "found": False,
+            "perfect_rhymes": [],
+            "suffix_candidates": candidates,
+        }
     else:
         out = {
-            "word": word, "found": True,
+            "word": word,
+            "found": True,
             "patterns": info["patterns"],
             "perfect_rhymes": engine.rhymes(word, limit=limit),
         }
@@ -116,19 +133,30 @@ def rhymes(word, limit, as_json):
 
 @cli.command
 @click.argument("word")
-@click.option("--max-distance", default=1, type=click.IntRange(min=1, max=2),
-              help="1 = slant, 2 = weak slant")
+@click.option(
+    "--max-distance",
+    default=1,
+    type=click.IntRange(min=1, max=2),
+    help="1 = slant, 2 = weak slant",
+)
 @click.option("--limit", default=20)
 @click.option("--json", "as_json", is_flag=True)
 def slant(word, max_distance, limit, as_json):
     """List slant rhymes for a word, ranked by pattern distance."""
     engine = get_engine()
     if not engine.lookup(word)["found"]:
-        out = {"word": word, "found": False, "slant_rhymes": [],
-               "suffix_candidates": engine.suffix_candidates(word)}
+        out = {
+            "word": word,
+            "found": False,
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(word),
+        }
     else:
-        out = {"word": word, "found": True,
-               "slant_rhymes": engine.slant_rhymes(word, max_distance, limit)}
+        out = {
+            "word": word,
+            "found": True,
+            "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
+        }
     if as_json:
         click.echo(json.dumps(out, indent=2))
         return
@@ -171,7 +199,9 @@ def suggestions(word, limit, as_json):
 
 @cli.command
 @click.argument("file", type=click.File("r"), default="-")
-@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON diagnostics")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit machine-readable JSON diagnostics"
+)
 def lint(file, as_json):
     """Lint a lyrics file: flag end-words with no rhyme partner in their stanza.
 
@@ -191,13 +221,13 @@ def lint(file, as_json):
         return
 
     for d in diagnostics:
-        click.echo(f"{d['line']}:{d['col']}: {d['severity']}: {d['message']} [{d['code']}]")
+        click.echo(
+            f"{d['line']}:{d['col']}: {d['severity']}: {d['message']} [{d['code']}]"
+        )
         if d.get("suggestions"):
             labels = []
             for s in d["suggestions"][:10]:
-                if s["distance"] is None:
-                    labels.append(s["word"])
-                elif s["distance"] == 0:
+                if s["distance"] is None or s["distance"] == 0:
                     labels.append(s["word"])
                 else:
                     labels.append(f"{s['word']} (slant d{s['distance']})")

@@ -20,8 +20,12 @@ mcp = FastMCP("lyrics-lint")
 def check_pair(
     line_a: Annotated[str, Field(description="First lyric line")],
     line_b: Annotated[str, Field(description="Second lyric line")],
-    word_a: Annotated[str, Field(description="Optional: override end-word of line A")] = None,
-    word_b: Annotated[str, Field(description="Optional: override end-word of line B")] = None,
+    word_a: Annotated[
+        str | None, Field(description="Optional: override end-word of line A")
+    ] = None,
+    word_b: Annotated[
+        str | None, Field(description="Optional: override end-word of line B")
+    ] = None,
 ) -> dict:
     """Check whether two lyric lines rhyme.
 
@@ -34,14 +38,26 @@ def check_pair(
     b = word_b or end_word(line_b)
     result = engine.check_pair(a, b)
     result["recommendations"] = (
-        engine.suggestions(b) if result["found_b"]
-        else {"word": b, "found": False, "perfect_rhymes": [],
-              "slant_rhymes": [], "suffix_candidates": engine.suffix_candidates(b)}
+        engine.suggestions(b)
+        if result["found_b"]
+        else {
+            "word": b,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(b),
+        }
     )
     result["recommendations_for_a"] = (
-        engine.suggestions(a) if result["found_a"]
-        else {"word": a, "found": False, "perfect_rhymes": [],
-              "slant_rhymes": [], "suffix_candidates": engine.suffix_candidates(a)}
+        engine.suggestions(a)
+        if result["found_a"]
+        else {
+            "word": a,
+            "found": False,
+            "perfect_rhymes": [],
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(a),
+        }
     )
     return result
 
@@ -58,31 +74,52 @@ def rhymes(
     engine = get_engine()
     info = engine.lookup(word)
     if not info["found"]:
-        return {"word": word, "found": False, "perfect_rhymes": [],
-                "suffix_candidates": engine.suffix_candidates(word)}
-    return {"word": word, "found": True, "patterns": info["patterns"],
-            "perfect_rhymes": engine.rhymes(word, limit=limit)}
+        return {
+            "word": word,
+            "found": False,
+            "perfect_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(word),
+        }
+    return {
+        "word": word,
+        "found": True,
+        "patterns": info["patterns"],
+        "perfect_rhymes": engine.rhymes(word, limit=limit),
+    }
 
 
 @mcp.tool()
 def slant_rhymes(
     word: Annotated[str, Field(description="Word to find slant rhymes for")],
-    max_distance: Annotated[int, Field(description="1 = slant, 2 = weak slant", default=1)] = 1,
+    max_distance: Annotated[
+        int, Field(description="1 = slant, 2 = weak slant", default=1)
+    ] = 1,
     limit: Annotated[int, Field(description="Max results", default=20)] = 20,
 ) -> dict:
     """List slant rhymes for a word, ranked by pattern distance."""
     engine = get_engine()
     if not engine.lookup(word)["found"]:
-        return {"word": word, "found": False, "slant_rhymes": [],
-                "suffix_candidates": engine.suffix_candidates(word)}
-    return {"word": word, "found": True,
-            "slant_rhymes": engine.slant_rhymes(word, max_distance, limit)}
+        return {
+            "word": word,
+            "found": False,
+            "slant_rhymes": [],
+            "suffix_candidates": engine.suffix_candidates(word),
+        }
+    return {
+        "word": word,
+        "found": True,
+        "slant_rhymes": engine.slant_rhymes(word, max_distance, limit),
+    }
 
 
 @mcp.tool()
 def suggestions(
-    word: Annotated[str, Field(description="End-word to get replacement suggestions for")],
-    limit: Annotated[int, Field(description="Max results per category", default=15)] = 15,
+    word: Annotated[
+        str, Field(description="End-word to get replacement suggestions for")
+    ],
+    limit: Annotated[
+        int, Field(description="Max results per category", default=15)
+    ] = 15,
 ) -> dict:
     """Get recommended replacement words for an end-word.
 
