@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 STRESS_TOKEN_RE = re.compile(r"^[A-Z]{2}[12]$")
@@ -44,35 +44,33 @@ FUNCTION_WORDS = frozenset(
 # Optional pronunciation overrides, merged over CMUdict at load time.
 DEFAULT_OVERRIDES = Path(__file__).resolve().parent / "data" / "pron_overrides.txt"
 
-_FREQUENCY = None
 
-
-def _no_frequency(_word: str) -> float:
-    """Stub ranking function used when `wordfreq` is not installed."""
+def _zero_frequency(_word: str) -> float:
+    """Ranking fallback when no frequency dataset is available."""
     return 0.0
 
 
-def frequency(word: str) -> float:
-    """Zipf frequency of `word` in English (0.0 = unknown/very rare).
+def dataset_dictionary() -> dict[str, list[str]]:
+    """Pronunciation data from the cache, or an empty mapping.
 
-    Used only for ranking results, so a missing `wordfreq` install degrades
-    to insertion order rather than failing.
+    Absence is normal: the engine then has nothing to rhyme with, which is a
+    degraded but working state, not an error.
     """
-    global _FREQUENCY
-    if _FREQUENCY is None:
-        try:
-            from wordfreq import zipf_frequency
-        except ImportError:  # pragma: no cover - wordfreq is a hard dependency
-            _FREQUENCY = _no_frequency
-        else:
-            _FREQUENCY = lambda w: zipf_frequency(w, "en")  # noqa: E731
-    return _FREQUENCY(word)
+    from .datasets import load_cmudict, verified_path
+
+    path = verified_path("cmudict")
+    return load_cmudict(path) if path is not None else {}
+
+
+def dataset_frequency() -> Callable[[str], float]:
+    """Frequency ranking from the cache, or a zero function."""
+    from .datasets import load_frequencies, verified_path
+
+    path = verified_path("frequencies")
+    return load_frequencies(path) if path is not None else _zero_frequency
 
 
 _G2P = None
-
-# Every token the ARPAbet inventories above recognise.
-PHONEMES = frozenset(VOWEL_FEATURE_NAMES := ()) if False else frozenset()
 
 
 def _valid_phoneme(token: str) -> bool:
@@ -278,22 +276,22 @@ class RhymeEngine:
         self,
         overrides: str | Path | None = DEFAULT_OVERRIDES,
         g2p: Callable[[str], list[str] | None] | None = None,
+        dictionary: Mapping[str, Sequence[str]] | None = None,
+        frequency: Callable[[str], float] | None = None,
     ) -> None:
-        import cmudict
-
         self.dict: dict[str, list[str]] = {}
         self.pattern_words: dict[str, set[str]] = defaultdict(set)
-        # Where each pronunciation came from: cmudict / override / g2p.
+        # Where each pronunciation came from: dataset / override / g2p.
         self.sources: dict[str, str] = {}
         self.unique_patterns: list[str] = []
         self.g2p = g2p
+        self.frequency = dataset_frequency() if frequency is None else frequency
 
-        for word, pron_list in cmudict.dict().items():
+        for word, pronunciations in (dictionary or dataset_dictionary()).items():
             w = word.lower()
-            pronunciations = [" ".join(p) for p in pron_list]
-            self.dict[w] = pronunciations
-            self.sources[w] = "cmudict"
-            for pron in pronunciations:
+            self.dict[w] = list(pronunciations)
+            self.sources[w] = "dataset"
+            for pron in self.dict[w]:
                 self.pattern_words[rhyme_pattern(pron)].add(w)
 
         self._load_overrides(overrides)
@@ -413,7 +411,7 @@ class RhymeEngine:
                 prons = self.dict.get(candidate, [])
                 if any(pre_rhyme_vowel(p) in shapes for p in prons):
                     rich = -1
-            return (rich, -frequency(candidate), candidate)
+            return (rich, -self.frequency(candidate), candidate)
 
         ranked = sorted(out, key=rank)
         return ranked[:limit] if limit else ranked
@@ -456,7 +454,7 @@ class RhymeEngine:
                     )
         ranked = sorted(
             out.items(),
-            key=lambda kv: (kv[1][0], kv[1][1], -frequency(kv[0]), kv[0]),
+            key=lambda kv: (kv[1][0], kv[1][1], -self.frequency(kv[0]), kv[0]),
         )
         if limit:
             ranked = ranked[:limit]

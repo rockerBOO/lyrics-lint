@@ -1,23 +1,15 @@
 """Tests for the rhyme engine: frequency ranking and pronunciation overrides."""
 
 import pytest
-from wordfreq import zipf_frequency
 
 from lyrics_lint.core import (
     FUNCTION_WORDS,
     RhymeEngine,
     final_stress,
-    get_engine,
     pattern_cost,
     phoneme_cost,
     pre_rhyme_vowel,
 )
-
-
-@pytest.fixture(scope="module")
-def engine():
-    return get_engine()
-
 
 # --------------------------------------------------- frequency ranking: perfect
 
@@ -40,20 +32,20 @@ def test_rhymes_without_limit_returns_the_whole_family(engine):
     assert "zoo" in words
 
 
-def test_rhymes_frequencies_are_descending(engine):
-    freqs = [zipf_frequency(w, "en") for w in engine.rhymes("you", limit=30)]
+def test_rhymes_frequencies_are_descending(engine, frequency):
+    freqs = [frequency(w) for w in engine.rhymes("you", limit=30)]
     assert freqs == sorted(freqs, reverse=True)
 
 
 # ----------------------------------------------------- frequency ranking: slant
 
 
-def test_slant_rhymes_rank_common_words_first(engine):
+def test_slant_rhymes_rank_common_words_first(engine, frequency):
     words = [s["word"] for s in engine.slant_rhymes("you", max_distance=1, limit=10)]
     # Previously: "'cuse", "'kay", "a", "aaliyah", "abaco", ...
     assert "aaliyah" not in words
     assert "abaco" not in words
-    assert all(zipf_frequency(w, "en") >= 3.0 for w in words)
+    assert all(frequency(w) >= 3.0 for w in words)
 
 
 def test_slant_rhymes_require_matching_final_stress(engine):
@@ -75,20 +67,20 @@ def test_slant_rhymes_skip_function_words(engine):
 # --------------------------------------------------------------- overrides: add
 
 
-def test_override_adds_word_missing_from_cmudict(tmp_path):
+def test_override_adds_word_missing_from_cmudict(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("rizz  R IH1 Z\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     assert eng.lookup("rizz")["found"] is True
     assert eng.patterns("rizz") == ["IH1 Z"]
     # newly added word participates in rhyme lookup
     assert "frizz" in eng.rhymes("rizz")
 
 
-def test_override_is_visible_from_the_rhyme_index(tmp_path):
+def test_override_is_visible_from_the_rhyme_index(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("zhoysh  ZH OY1 ZH\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     # pattern_words and unique_patterns must both be updated, otherwise the
     # word is findable by lookup() but invisible to rhyme/slant search.
     assert eng.patterns("zhoysh") == ["OY1 ZH"]
@@ -99,19 +91,19 @@ def test_override_is_visible_from_the_rhyme_index(tmp_path):
     )
 
 
-def test_override_appends_instead_of_replacing_pronunciations(tmp_path):
+def test_override_appends_instead_of_replacing_pronunciations(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("wind  W IH1 N D\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     # cmudict already has wind = W AY1 N D and W IH1 N D; the override must
     # add to the list, not clobber it.
     assert len(eng.dict["wind"]) == 3
 
 
-def test_override_ignores_comments_and_blank_lines(tmp_path):
+def test_override_ignores_comments_and_blank_lines(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("# brand words\n\nrizz  R IH1 Z   # a z-sound\n\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     assert eng.lookup("rizz")["found"] is True
 
 
@@ -119,10 +111,10 @@ def test_override_ignores_comments_and_blank_lines(tmp_path):
 # overrides: remove
 
 
-def test_override_removes_word_with_minus_prefix(tmp_path):
+def test_override_removes_word_with_minus_prefix(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("-blue\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     assert eng.lookup("blue")["found"] is False
     assert "blue" not in eng.rhymes("you")
 
@@ -130,15 +122,15 @@ def test_override_removes_word_with_minus_prefix(tmp_path):
 # ------------------------------------------------------------------- overrides
 
 
-def test_override_rejects_pronunciation_without_stress_marker(tmp_path):
+def test_override_rejects_pronunciation_without_stress_marker(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("zhuzz  ZH UH Z\n")
     with pytest.raises(ValueError, match="zhuzz"):
         RhymeEngine(overrides=path)
 
 
-def test_missing_override_file_is_not_an_error(tmp_path):
-    eng = RhymeEngine(overrides=tmp_path / "nope.txt")
+def test_missing_override_file_is_not_an_error(tmp_path, engine_factory):
+    eng = engine_factory(overrides=tmp_path / "nope.txt")
     assert eng.lookup("you")["found"] is True
 
 
@@ -200,7 +192,7 @@ def test_slant_rhymes_prefer_the_nearer_vowel(engine):
     assert words.index("duh") < words.index("way")
 
 
-def test_slant_rhymes_report_cost_and_sort_by_it(engine):
+def test_slant_rhymes_report_cost_and_sort_by_it(engine, frequency):
     rows = engine.slant_rhymes("you", max_distance=2, limit=40)
     assert all("cost" in row for row in rows)
     assert rows == sorted(
@@ -208,7 +200,7 @@ def test_slant_rhymes_report_cost_and_sort_by_it(engine):
         key=lambda r: (
             r["distance"],
             r["cost"],
-            -zipf_frequency(r["word"], "en"),
+            -frequency(r["word"]),
             r["word"],
         ),
     )
@@ -265,8 +257,8 @@ def fake_g2p():
     return g2p
 
 
-def test_g2p_resolves_word_missing_from_cmudict(fake_g2p):
-    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+def test_g2p_resolves_word_missing_from_cmudict(fake_g2p, engine_factory):
+    eng = engine_factory(g2p=fake_g2p)
     info = eng.lookup("cruff")
     assert info["found"] is True
     assert info["source"] == "g2p"
@@ -274,38 +266,57 @@ def test_g2p_resolves_word_missing_from_cmudict(fake_g2p):
     assert "stuff" in eng.rhymes("cruff")
 
 
-def test_g2p_result_is_cached(fake_g2p):
-    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+def test_g2p_result_is_cached(fake_g2p, engine_factory):
+    eng = engine_factory(g2p=fake_g2p)
     eng.lookup("cruff")
     eng.lookup("cruff")
     assert fake_g2p.calls == ["cruff"]
 
 
-def test_g2p_disabled_leaves_word_unknown():
-    eng = RhymeEngine(overrides=None, g2p=None)
+def test_g2p_disabled_leaves_word_unknown(engine_factory):
+    eng = engine_factory(g2p=None)
     assert eng.lookup("cruff")["found"] is False
     assert eng.lookup("cruff")["source"] is None
 
 
-def test_g2p_returning_none_leaves_word_unknown():
-    eng = RhymeEngine(overrides=None, g2p=lambda _word: None)
+def test_g2p_returning_none_leaves_word_unknown(engine_factory):
+    eng = engine_factory(g2p=lambda _word: None)
     assert eng.lookup("cruff")["found"] is False
 
 
-def test_cmudict_word_reports_cmudict_source(engine):
-    assert engine.lookup("you")["source"] == "cmudict"
+def test_dataset_word_reports_dataset_source(engine):
+    assert engine.lookup("you")["source"] == "dataset"
 
 
-def test_override_word_reports_override_source(tmp_path):
+def test_override_word_reports_override_source(tmp_path, engine_factory):
     path = tmp_path / "overrides.txt"
     path.write_text("rizz  R IH1 Z\n")
-    eng = RhymeEngine(overrides=path)
+    eng = engine_factory(overrides=path)
     assert eng.lookup("rizz")["source"] == "override"
 
 
-def test_g2p_word_participates_in_rhyme_lookup_once_resolved(fake_g2p):
+def test_g2p_word_participates_in_rhyme_lookup_once_resolved(fake_g2p, engine_factory):
     # Resolution is lazy: a g2p word joins the pattern index when it is first
     # looked up, so it can be a rhyme partner from then on.
-    eng = RhymeEngine(overrides=None, g2p=fake_g2p)
+    eng = engine_factory(g2p=fake_g2p)
     assert "stuff" in eng.rhymes("cruff")
     assert "cruff" in eng.rhymes("stuff")
+
+
+# -------------------------------------------------- injected engine datasets
+
+
+def test_engine_indexes_injected_dictionary():
+    engine = RhymeEngine(
+        dictionary={"foo": ["F UW1"], "goo": ["G UW1"]}, frequency=None
+    )
+    assert engine.lookup("foo")["found"] is True
+    assert engine.rhymes("foo") == ["goo"]
+
+
+def test_engine_without_dictionary_is_empty_but_usable():
+    engine = RhymeEngine(overrides=None, dictionary={}, frequency=None)
+    assert engine.lookup("you")["found"] is False
+    assert engine.rhymes("you") == []
+    assert engine.slant_rhymes("you") == []
+    assert engine.suggestions("you")["perfect_rhymes"] == []
