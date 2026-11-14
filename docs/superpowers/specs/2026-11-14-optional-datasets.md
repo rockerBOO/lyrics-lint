@@ -25,7 +25,7 @@ rhyme engine that works — with less functionality — when a dataset is absent
 | name | filename | size | source | licence | sha256 |
 |---|---|---|---|---|---|
 | `cmudict` | `cmudict.dict` | 3.6 MB | `cmusphinx/cmudict` @ `74790861f652b15e4ac49015a90074ad62a27690` | BSD-2 (CMU 1993-2015) | `81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22` |
-| `frequencies` | `en_50k.txt` | 623 KB | `hermitdave/FrequencyWords` `content/2018/en/en_50k.txt` (OpenSubtitles 2018) | MIT | `5351ff405b1126ef555791dd4d9798a48e3e9a501a9fc481a9da957752cfb458` |
+| `frequencies` | `en_50k.txt` | 623 KB | `hermitdave/FrequencyWords` `content/2018/en/en_50k.txt` (OpenSubtitles 2018) | MIT (code) / CC BY-SA 4.0 (word counts) | `5351ff405b1126ef555791dd4d9798a48e3e9a501a9fc481a9da957752cfb458` |
 
 **Probe order:** `LYRICS_LINT_DATA` → `$XDG_CACHE_HOME/lyrics-lint` →
 `~/.cache/lyrics-lint` → nothing. Presence is decided by the file existing;
@@ -42,7 +42,7 @@ Absence is normal, never an error:
 
 | absent | behaviour |
 |---|---|
-| `cmudict` | `check` → verdict `unknown`; `rhymes`/`slant`/`suggestions` → empty results; every result carries a `hint` telling the user to run `lyrics data fetch`. `lint` still parses lines and reports `unknown-word` entries with suffix-based advice (pure string matching, no dictionary). |
+| `cmudict` | `check` → verdict `unknown`; `rhymes`/`slant`/`suggestions` → empty results. MCP results and CLI `--json` payloads carry a `hint` telling the user to run `lyrics data fetch`, and the CLI prints it to stderr. `lint` still parses lines but can only emit one `unknown-word` per end-word with no suggestions: the suffix fallback reads the same dictionary, so it has nothing to offer. |
 | `frequencies` | ranking falls back to alphabetical (`frequency()` returns 0.0 for every word). |
 | both | everything above; nothing raises. |
 | `g2p_en` not installed | `--g2p` is a no-op; `RhymeEngine(g2p=...)` still accepts an injected callable. |
@@ -65,4 +65,6 @@ import used only when it happens to be installed.
   pruned `cmudict.dict` (BSD) and `en_50k.txt` (MIT) covering every word the
   tests assert on. Fixtures are attributed in the README.
 - Fetching is tested against `file://` URLs, including hash mismatch.
-- One opt-in module exercises the real cache (`pytest -m dataset`).
+- No test reads the real cache or the network; the pinned URLs and hashes are
+  exercised only by `lyrics data fetch` (a wrong pin would surface there, not in
+  the suite).

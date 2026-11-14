@@ -241,6 +241,10 @@ pathlib.Path("tests/fixtures/en_50k.txt").write_text(
 PY
 ```
 
+  Note: `en_50k.txt` content is CC BY-SA 4.0 (the generator code is MIT), so
+  the committed fixture carries that licence and attribution — see
+  `tests/fixtures/README.md`.
+
   Verify the fixtures are plausible before continuing: `wc -l tests/fixtures/*`, and check that `grep -c "^you " tests/fixtures/cmudict.dict` is 1.
 
 - [x] **Step 2: Write the failing test** — append to `tests/test_core.py`

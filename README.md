@@ -14,7 +14,7 @@ sha256 pinned in `lyrics_lint/datasets.py`:
 | name | file | size | source | licence |
 |---|---|---|---|---|
 | `cmudict` | `cmudict.dict` | 3.6 MB | [cmusphinx/cmudict](https://github.com/cmusphinx/cmudict) | BSD-2-Clause |
-| `frequencies` | `en_50k.txt` | 623 KB | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) | MIT |
+| `frequencies` | `en_50k.txt` | 623 KB | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) | MIT (code) / CC BY-SA 4.0 (word counts) |
 
 ```bash
 lyrics data fetch        # download both, verify, write to the cache
@@ -23,13 +23,14 @@ lyrics data path         # where the cache lives
 ```
 
 Lookup order: `$LYRICS_LINT_DATA`, then `$XDG_CACHE_HOME/lyrics-lint`, then
-`~/.cache/lyrics-lint`. Nothing else in the package touches the network.
+`~/.cache/lyrics-lint`. No other code path touches the network, except the
+optional `g2p_en` backend, which may download NLTK data on its first guess.
 
 **Without datasets everything still runs, with less functionality:**
 
 | absent | behaviour |
 |---|---|
-| `cmudict` | `check` answers `unknown`; `rhymes`/`slant`/`suggestions` return empty results; every command prints a one-line hint to run `lyrics data fetch` (MCP results carry the same text as `hint`); `lint` still parses lines and flags unknown words with suffix-based advice |
+| `cmudict` | `check` answers `unknown`; `rhymes`/`slant`/`suggestions` return empty results; the rhyming and linting commands print a one-line hint to run `lyrics data fetch`, and `--json` payloads plus MCP results carry it as `hint`; `lint` still parses lines but can only report one `unknown-word` per end-word with no suggestions — it cannot judge rhyme at all, because the suffix fallback reads the same dictionary |
 | `frequencies` | ranking falls back to alphabetical |
 
 Dataset values are only read, never modified: `status` reports a truncated or
@@ -46,17 +47,17 @@ tampered file as `unverified`, and lookups then behave as if it were absent.
   **last part of the word**: words sharing its final suffix are returned as
   assonance-style candidates.
 - Results are **ranked by word frequency** (log10 of the OpenSubtitles counts)
-  rather than alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
-  too, through...` instead of `abou, abreu, accrue`. Slant results sort by
+  rather than alphabetically, so `lyrics rhymes you` opens with `to, do, who,
+  too, two, into...` instead of `abou, abreu, accrue`. Slant results sort by
   distance first, then frequency.
 - When the query has more than one syllable, perfect rhymes that share its
   pre-rhyme vowel rank first: `rhymes shampoo` opens with `tattoo, bamboo,
-  taboo` rather than the monosyllables `to, do, who` that dominate the same
+  thankyou, taboo` rather than the monosyllables `to, do, who` that dominate the same
   pattern family. Monosyllabic queries are unaffected.
 - Slant results carry a phonetic `cost` alongside the plain edit distance, and
   sort by distance first, then cost: substitutions are priced by how far apart
   the phonemes actually are (ARPAbet height/backness/rounding/glide for vowels,
-  place/manner/voicing for consonants). `night` → `like, side, nice, type`
+  place/manner/voicing for consonants). `night` → `like, nice, side, died`
   instead of `out, high, try`, and a near vowel swap outranks bolting on an
   extra coda consonant.
 - Slant lookup skips candidates whose final stress differs from the query's
@@ -191,14 +192,16 @@ uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics mcp
 ```
 
 MCP client config (e.g. Claude Desktop / pi / any MCP client) — runs directly
-from git, no local clone or path editing needed (requires `uv` and `git`):
+from git, no local clone or path editing needed (requires `uv` and `git`).
+Fetch the datasets first: until then every tool returns empty results plus a
+`hint`, and the server picks the data up without a restart once it verifies.
 
 ```json
 {
   "mcpServers": {
     "lyrics-lint": {
-      "command": ["uvx", "--from", "git+https://github.com/rockerBOO/lyrics-lint", "lyrics", "mcp"],
-      "env": { "LYRICS_LINT_G2P": "1" }
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/rockerBOO/lyrics-lint", "lyrics", "mcp"]
     }
   }
 }
@@ -222,5 +225,5 @@ Want to check your lyrics for rhyme issues right in your editor? See
 
 - Rhyme quantification scheme: [rhyme_dict](https://github.com/benrussell80/rhyme_dict) — lyrics-lint keeps the same scheme but replaces the Neo4j dependency with an in-memory pattern index.
 - Pronunciation data: [Carnegie Mellon Pronouncing Dictionary](https://github.com/cmusphinx/cmudict) (BSD-2-Clause).
-- Ranking data: [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (MIT), counts derived from OpenSubtitles 2018.
+- Ranking data: [FrequencyWords](https://github.com/hermitdave/FrequencyWords) © Hermit Dave — code MIT, word lists CC BY-SA 4.0; counts derived from OpenSubtitles 2018. The share-alike applies to the word-count file, including the pruned copy in `tests/fixtures/`, not to the program.
 - `tests/fixtures/` holds a pruned slice of both, so the test suite runs offline; see `tests/fixtures/README.md`.

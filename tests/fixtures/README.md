@@ -8,7 +8,18 @@ tests mention plus the rhyme-pattern families those words belong to
 | file | origin | licence |
 |---|---|---|
 | `cmudict.dict` | [CMU Pronouncing Dictionary](https://github.com/cmusphinx/cmudict) | BSD-2-Clause (CMU 1993-2015) |
-| `en_50k.txt` | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) `content/2018/en/en_50k.txt` (OpenSubtitles 2018) | MIT |
+| `en_50k.txt` | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) `content/2018/en/en_50k.txt` (OpenSubtitles 2018) | CC BY-SA 4.0 (word counts; the generator code is MIT) |
 
-Do not hand-edit these; regenerate with the snippet in the plan
-(`docs/superpowers/plans/2026-11-14-optional-datasets.md`).
+`cmudict.dict` is BSD-2-Clause and freely redistributable. The word-count
+fixture is derived from CC BY-SA 4.0 content, so it stays under that licence
+and carries its attribution; it is test data, not part of the program.
+
+**Regenerating** (only needed when the tests start asserting on new words):
+
+```bash
+lyrics data fetch                                   # populate the real cache
+cp "$(lyrics data path)/cmudict.dict" /tmp/ds-probe/    # or any directory
+cp "$(lyrics data path)/en_50k.txt"  /tmp/ds-probe/
+# then run the pruning snippet in
+# docs/superpowers/plans/2026-11-14-optional-datasets.md (Task 4, Step 1)
+```

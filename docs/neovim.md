@@ -3,10 +3,30 @@
 Lint your lyrics file in Neovim and get replacement suggestions, using
 [nvim-lint](https://github.com/mfussenegger/nvim-lint).
 
+## 0. Fetch the datasets once
+
+The package ships no dictionary. Until the data is fetched, `lyrics lint` can
+only report one `unknown-word` per line with no suggestions — every line gets
+underlined, `<leader>lr` always says "No suggestions on this line", and the CLI's
+warning goes to stderr, which nvim-lint discards. Fetch first:
+
+```sh
+lyrics data fetch          # or: uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics data fetch
+lyrics data status         # both rows should say "ok"
+```
+
+The data lands in `~/.cache/lyrics-lint` (or `$LYRICS_LINT_DATA` /
+`$XDG_CACHE_HOME/lyrics-lint`). If Neovim runs in a different environment than
+your shell — a container, a remote, a sandboxed GUI — point `LYRICS_LINT_DATA`
+at the same directory for both.
+
 ## 1. Add the linter
 
 ```lua
 require("lint").linters.lyrics = {
+  -- A clone's venv, or `uvx` for the clone-free install the README recommends:
+  -- cmd = "uvx", args = { "--from", "git+https://github.com/rockerBOO/lyrics-lint",
+  --                       "lyrics", "lint", "-", "--json" },
   cmd = "/path/to/lyrics-lint/.venv/bin/lyrics", -- or your `lyrics` install path
   args = { "lint", "-", "--json" },
   stdin = true,
@@ -47,6 +67,9 @@ end, { desc = "Lint lyrics" })
 ```
 
 ## 3. (Optional) Add a keymap to fix a flagged word
+
+If this keymap reports "No suggestions on this line" for every line, the
+datasets are almost certainly missing — run `lyrics data fetch` and lint again.
 
 Puts your cursor's flagged word into a picker, and replaces it with
 whatever you choose:
