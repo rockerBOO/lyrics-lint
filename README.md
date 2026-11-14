@@ -1,8 +1,39 @@
 # lyrics-lint
 
 A rhyme and slant-rhyme linter for lyrics, with both a CLI and an MCP server.
-Self-contained — no Neo4j required. Rhyme patterns are computed directly from
-the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
+Self-contained — no Neo4j required. Rhyme patterns are computed from the
+Carnegie Mellon Pronouncing Dictionary, which is **not bundled**: the package
+is code only (`click` + `fastmcp`), and the datasets are fetched when you ask
+for them.
+
+## Datasets
+
+Two optional files are fetched into a cache directory and verified against a
+sha256 pinned in `lyrics_lint/datasets.py`:
+
+| name | file | size | source | licence |
+|---|---|---|---|---|
+| `cmudict` | `cmudict.dict` | 3.6 MB | [cmusphinx/cmudict](https://github.com/cmusphinx/cmudict) | BSD-2-Clause |
+| `frequencies` | `en_50k.txt` | 623 KB | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) | MIT |
+
+```bash
+lyrics data fetch        # download both, verify, write to the cache
+lyrics data status       # what is present, whether it still verifies
+lyrics data path         # where the cache lives
+```
+
+Lookup order: `$LYRICS_LINT_DATA`, then `$XDG_CACHE_HOME/lyrics-lint`, then
+`~/.cache/lyrics-lint`. Nothing else in the package touches the network.
+
+**Without datasets everything still runs, with less functionality:**
+
+| absent | behaviour |
+|---|---|
+| `cmudict` | `check` answers `unknown`; `rhymes`/`slant`/`suggestions` return empty results; every command prints a one-line hint to run `lyrics data fetch` (MCP results carry the same text as `hint`); `lint` still parses lines and flags unknown words with suffix-based advice |
+| `frequencies` | ranking falls back to alphabetical |
+
+Dataset values are only read, never modified: `status` reports a truncated or
+tampered file as `unverified`, and lookups then behave as if it were absent.
 
 ## How it works
 
@@ -14,8 +45,8 @@ the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
 - When a word isn't found (or has no rhymes), the linter falls back to the
   **last part of the word**: words sharing its final suffix are returned as
   assonance-style candidates.
-- Results are **ranked by word frequency** (`wordfreq`'s Zipf score) rather than
-  alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
+- Results are **ranked by word frequency** (log10 of the OpenSubtitles counts)
+  rather than alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
   too, through...` instead of `abou, abreu, accrue`. Slant results sort by
   distance first, then frequency.
 - When the query has more than one syllable, perfect rhymes that share its
@@ -36,7 +67,8 @@ the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
 ## Adding words
 
 CMUdict is from 2015 and has no `rizz`, `gyatt`, `delulu`, `doomscroll` or
-`ghosting`. Add pronunciations (or delete bad ones) in
+`ghosting`. Overrides are small hand-written data, so they ship with the code.
+Add pronunciations (or delete bad ones) in
 [`lyrics_lint/data/pron_overrides.txt`](lyrics_lint/data/pron_overrides.txt),
 which is merged over CMUdict at load time:
 
@@ -46,8 +78,8 @@ rizz        R IH1 Z            # add a pronunciation (appended, never replaced)
 ```
 
 For words you don't want to hand-write, `--g2p` guesses a pronunciation from
-the spelling with a neural grapheme-to-phoneme model (`g2p_en`). It is opt-in
-because the model is slow to initialise and downloads NLTK data on first use:
+the spelling. This uses `g2p_en` **if you happen to have it installed** — it is
+not a dependency and not fetched, so the flag is a no-op otherwise:
 
 ```bash
 uv run lyrics --g2p check "you looking kinda cruff" "i believe in you"
@@ -76,6 +108,13 @@ uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics --help
 ```
 
 `uvx` caches the environment, so only the first run takes a few seconds.
+
+Either way, fetch the datasets once before rhyming (see
+[Datasets](#datasets)):
+
+```bash
+uvx --from git+https://github.com/rockerBOO/lyrics-lint lyrics data fetch
+```
 
 **Option B — clone and run locally:**
 
@@ -113,6 +152,8 @@ uv run lyrics lint songs/eleven.md
 # Reads from stdin if FILE is omitted (or passed as '-')
 cat songs/eleven.md | uv run lyrics lint --json
 ```
+
+Run `lyrics data fetch` first, or expect the empty-result behaviour above.
 
 `lint` splits the input into stanzas on blank lines and markdown structure
 (`#` headings, `[Section]` tags, `---` rules, lists), then checks each
@@ -170,8 +211,8 @@ Want to check your lyrics for rhyme issues right in your editor? See
 
 ## Design notes
 
-- The engine loads cmudict (~30k words) once per process and builds a
-  pattern → words index in memory (~1 s).
+- The engine builds its pattern index once per process from whatever
+  dictionary it was given (~126k words, ~0.5 s).
 - `slant_rhymes` compares the word's pattern against all unique patterns on
   demand (≈0.1 s), so no all-pairs DB is needed.
 - Ranking by frequency costs ~0.1 s per 5k candidates, which is why `rhymes()`
@@ -180,4 +221,6 @@ Want to check your lyrics for rhyme issues right in your editor? See
 ## References & credits
 
 - Rhyme quantification scheme: [rhyme_dict](https://github.com/benrussell80/rhyme_dict) — lyrics-lint keeps the same scheme but replaces the Neo4j dependency with an in-memory pattern index.
-- Pronunciation data: [Carnegie Mellon Pronouncing Dictionary](http://www.speech.cs.cmu.edu/cgi-bin/cmudict).
+- Pronunciation data: [Carnegie Mellon Pronouncing Dictionary](https://github.com/cmusphinx/cmudict) (BSD-2-Clause).
+- Ranking data: [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (MIT), counts derived from OpenSubtitles 2018.
+- `tests/fixtures/` holds a pruned slice of both, so the test suite runs offline; see `tests/fixtures/README.md`.

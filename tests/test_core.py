@@ -1,5 +1,7 @@
 """Tests for the rhyme engine: frequency ranking and pronunciation overrides."""
 
+import pathlib
+
 import pytest
 
 from lyrics_lint.core import (
@@ -320,3 +322,34 @@ def test_engine_without_dictionary_is_empty_but_usable():
     assert engine.rhymes("you") == []
     assert engine.slant_rhymes("you") == []
     assert engine.suggestions("you")["perfect_rhymes"] == []
+
+
+# --------------------------------------------------- packaging: no dataset deps
+
+
+def test_engine_module_imports_no_dataset_at_module_level():
+    """Importing lyrics_lint must not need cmudict/wordfreq/g2p_en.
+
+    A guarded import inside a function body is fine; an import at module level
+    would make the dataset a hard requirement again.
+    """
+    import ast
+
+    tree = ast.parse(pathlib.Path("lyrics_lint/core.py").read_text())
+    module_level = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            module_level.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            module_level.add(node.module.split(".")[0])
+
+    assert module_level.isdisjoint({"cmudict", "wordfreq", "g2p_en"})
+
+
+def test_declared_dependencies_are_code_only():
+    import tomllib
+
+    project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+    declared = " ".join(project["project"]["dependencies"]).lower()
+    for dataset_package in ("cmudict", "wordfreq", "g2p-en"):
+        assert dataset_package not in declared

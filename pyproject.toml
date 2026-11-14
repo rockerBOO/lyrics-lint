@@ -5,10 +5,7 @@ description = "Lyrics rhyme/slant-rhyme linter with CLI and MCP server"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1",
-    "cmudict>=0.4",
     "fastmcp>=2.0",
-    "g2p-en>=2.1.0",
-    "wordfreq>=3.1.1",
 ]
 
 [project.scripts]
