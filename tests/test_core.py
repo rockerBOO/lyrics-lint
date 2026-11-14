@@ -128,7 +128,7 @@ def test_override_rejects_pronunciation_without_stress_marker(tmp_path, engine_f
     path = tmp_path / "overrides.txt"
     path.write_text("zhuzz  ZH UH Z\n")
     with pytest.raises(ValueError, match="zhuzz"):
-        RhymeEngine(overrides=path)
+        engine_factory(overrides=path)
 
 
 def test_missing_override_file_is_not_an_error(tmp_path, engine_factory):
@@ -310,14 +310,14 @@ def test_g2p_word_participates_in_rhyme_lookup_once_resolved(fake_g2p, engine_fa
 
 def test_engine_indexes_injected_dictionary():
     engine = RhymeEngine(
-        dictionary={"foo": ["F UW1"], "goo": ["G UW1"]}, frequency=None
+        dictionary={"foo": ["F UW1"], "goo": ["G UW1"]}, frequency=lambda _w: 0.0
     )
     assert engine.lookup("foo")["found"] is True
     assert engine.rhymes("foo") == ["goo"]
 
 
 def test_engine_without_dictionary_is_empty_but_usable():
-    engine = RhymeEngine(overrides=None, dictionary={}, frequency=None)
+    engine = RhymeEngine(overrides=None, dictionary={}, frequency=lambda _w: 0.0)
     assert engine.lookup("you")["found"] is False
     assert engine.rhymes("you") == []
     assert engine.slant_rhymes("you") == []
@@ -400,3 +400,61 @@ def test_suffix_candidates_are_ordered_by_frequency():
         "people",
         "trample",
     ]
+
+
+# ------------------------------------------- staleness: data fetched mid-process
+
+
+def test_engine_reports_missing_data_itself():
+    engine = RhymeEngine(overrides=None, dictionary={}, frequency=lambda _w: 0.0)
+    assert engine.missing_hint() is not None
+    assert "lyrics data fetch" in engine.missing_hint()
+
+
+def test_engine_loaded_from_dataset_has_no_hint(tmp_path, monkeypatch):
+    import hashlib
+
+    from lyrics_lint import datasets
+
+    payload = b"YOU  Y UW1\n"
+    dataset = datasets.Dataset(
+        "cmudict",
+        "cmudict.dict",
+        "file:///x",
+        hashlib.sha256(payload).hexdigest(),
+        "BSD-2-Clause",
+        "mini",
+    )
+    (tmp_path / "cmudict.dict").write_bytes(payload)
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(datasets, "DATASETS", (dataset,))
+    monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {"cmudict": dataset})
+
+    engine = RhymeEngine(overrides=None, frequency=None)
+    assert engine.lookup("you")["found"] is True
+    assert engine.missing_hint() is None
+
+
+def test_get_engine_picks_up_datasets_fetched_after_startup(tmp_path, monkeypatch):
+    """A long-lived MCP server must not stay empty after `lyrics data fetch`."""
+    import hashlib
+
+    from lyrics_lint import core, datasets
+
+    payload = b"YOU  Y UW1\n"
+    dataset = datasets.Dataset(
+        "cmudict",
+        "cmudict.dict",
+        "file:///x",
+        hashlib.sha256(payload).hexdigest(),
+        "BSD-2-Clause",
+        "mini",
+    )
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(datasets, "DATASETS", (dataset,))
+    monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {"cmudict": dataset})
+    monkeypatch.setattr(core, "_ENGINE", None)
+
+    assert core.get_engine().lookup("you")["found"] is False
+    (tmp_path / "cmudict.dict").write_bytes(payload)
+    assert core.get_engine().lookup("you")["found"] is True

@@ -22,6 +22,7 @@ from pathlib import Path
 DATA_DIR_ENV = "LYRICS_LINT_DATA"
 CACHE_DIRNAME = "lyrics-lint"
 CHUNK_SIZE = 64 * 1024
+DOWNLOAD_TIMEOUT = 30
 
 
 @dataclass(frozen=True)
@@ -96,24 +97,40 @@ def sha256_of(path: Path) -> str:
 
 
 def status(datasets: Sequence[Dataset] | None = None) -> list[dict]:
-    """Report each dataset's presence and whether its bytes still verify."""
+    """Report each dataset's presence and whether its bytes still verify.
+
+    An unreadable file counts as unverified: some permission or I/O problem is
+    not a reason for every command to traceback.
+    """
     datasets = DATASETS if datasets is None else datasets
     entries = []
     for dataset in datasets:
         path = data_dir() / dataset.filename
         present = path.is_file()
+        try:
+            size = path.stat().st_size if present else 0
+        except OSError:
+            size = 0
         entries.append(
             {
                 "name": dataset.name,
                 "path": str(path),
                 "present": present,
-                "bytes": path.stat().st_size if present else 0,
-                "verified": present and sha256_of(path) == dataset.sha256,
+                "bytes": size,
+                "verified": present and _hashes_to(path, dataset.sha256),
                 "licence": dataset.licence,
                 "description": dataset.description,
             }
         )
     return entries
+
+
+def _hashes_to(path: Path, expected: str) -> bool:
+    """Whether `path` hashes to `expected`, treating I/O errors as a mismatch."""
+    try:
+        return sha256_of(path) == expected
+    except OSError:
+        return False
 
 
 def verified_path(name: str) -> Path | None:
@@ -128,7 +145,7 @@ def verified_path(name: str) -> Path | None:
     path = data_dir() / dataset.filename
     if not path.is_file():
         return None
-    return path if sha256_of(path) == dataset.sha256 else None
+    return path if _hashes_to(path, dataset.sha256) else None
 
 
 def missing_hint() -> str | None:
@@ -171,7 +188,7 @@ def fetch(
 
         partial = target.with_suffix(target.suffix + ".part")
         try:
-            _download(dataset.url, partial)
+            _download(dataset, partial)
             actual = sha256_of(partial)
             if actual != dataset.sha256:
                 raise RuntimeError(
@@ -185,10 +202,19 @@ def fetch(
     return results
 
 
-def _download(url: str, target: Path) -> None:
-    with urllib.request.urlopen(url) as response, target.open("wb") as handle:
-        for chunk in iter(lambda: response.read(CHUNK_SIZE), b""):
-            handle.write(chunk)
+def _download(dataset: Dataset, target: Path) -> None:
+    """Stream one dataset to `target`, with a timeout and a readable failure."""
+    try:
+        with (
+            urllib.request.urlopen(dataset.url, timeout=DOWNLOAD_TIMEOUT) as response,
+            target.open("wb") as handle,
+        ):
+            for chunk in iter(lambda: response.read(CHUNK_SIZE), b""):
+                handle.write(chunk)
+    except OSError as exc:
+        raise RuntimeError(
+            f"{dataset.name}: could not download {dataset.url}: {exc}"
+        ) from exc
 
 
 def _entry(dataset: Dataset, path: Path, fetched: bool) -> dict:

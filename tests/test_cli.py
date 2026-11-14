@@ -63,7 +63,7 @@ def test_rhymes_without_dictionary_prints_fetch_hint(tmp_path, monkeypatch):
     monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
     monkeypatch.setattr(
         "lyrics_lint.cli.get_engine",
-        lambda: RhymeEngine(overrides=None, dictionary={}, frequency=None),
+        lambda: RhymeEngine(overrides=None, dictionary={}, frequency=lambda _w: 0.0),
     )
 
     result = CliRunner().invoke(cli, ["rhymes", "you"])
@@ -74,7 +74,9 @@ def test_rhymes_without_dictionary_prints_fetch_hint(tmp_path, monkeypatch):
 
 def test_lint_without_dictionary_still_reports(tmp_path, monkeypatch):
     monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
-    empty = lambda: RhymeEngine(overrides=None, dictionary={}, frequency=None)  # noqa: E731
+    empty = lambda: RhymeEngine(  # noqa: E731
+        overrides=None, dictionary={}, frequency=lambda _w: 0.0
+    )
     monkeypatch.setattr("lyrics_lint.cli.get_engine", empty)
     monkeypatch.setattr("lyrics_lint.lint.get_engine", empty)
     lyrics = tmp_path / "s.md"
@@ -85,3 +87,23 @@ def test_lint_without_dictionary_still_reports(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "lyrics data fetch" in result.output
     assert "unknown-word" in result.output
+
+
+def test_data_fetch_reports_network_failure_without_a_traceback(tmp_path, monkeypatch):
+    import urllib.error
+
+    from lyrics_lint import datasets
+
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(
+        datasets.urllib.request,
+        "urlopen",
+        lambda *_a, **_k: (_ for _ in ()).throw(urllib.error.URLError("no route")),
+    )
+
+    result = CliRunner().invoke(cli, ["data", "fetch", "cmudict"])
+
+    assert result.exit_code != 0
+    assert "Error:" in result.output
+    assert "cmudict" in result.output
+    assert "Traceback" not in result.output

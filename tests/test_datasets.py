@@ -195,5 +195,94 @@ def test_tampered_cache_file_is_treated_as_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {dataset.name: dataset})
 
     assert datasets.verified_path("cmudict") is None
-    engine = RhymeEngine(overrides=None, g2p=None, frequency=None)
+    engine = RhymeEngine(overrides=None, g2p=None, frequency=lambda _w: 0.0)
     assert engine.lookup("you")["found"] is False
+
+
+# ------------------------------------------------- robustness: bad files/network
+
+
+def _mini(tmp_path, payload, name="mini"):
+    (tmp_path / f"{name}.dict").write_bytes(payload)
+    return datasets.Dataset(
+        name,
+        f"{name}.dict",
+        "file:///nope",
+        hashlib.sha256(payload).hexdigest(),
+        "test",
+        "mini",
+    )
+
+
+def test_verified_path_treats_unreadable_file_as_absent(tmp_path, monkeypatch):
+    dataset = _mini(tmp_path, b"YOU  Y UW1\n")
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+    monkeypatch.setattr(datasets, "DATASETS_BY_NAME", {"mini": dataset})
+
+    def unreadable(_path):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(datasets, "sha256_of", unreadable)
+    assert datasets.verified_path("mini") is None
+
+
+def test_status_marks_unreadable_file_unverified(tmp_path, monkeypatch):
+    dataset = _mini(tmp_path, b"YOU  Y UW1\n")
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+
+    def unreadable(_path):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(datasets, "sha256_of", unreadable)
+    entry = datasets.status((dataset,))[0]
+    assert entry["present"] is True
+    assert entry["verified"] is False
+
+
+def test_fetch_wraps_network_errors_naming_the_dataset(tmp_path, monkeypatch):
+    import urllib.error
+
+    source = datasets.Dataset(
+        "mini", "mini.dict", "https://example.invalid/x.dict", "0" * 64, "test", "mini"
+    )
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path))
+
+    def no_route(*_args, **_kwargs):
+        raise urllib.error.URLError("no route to host")
+
+    monkeypatch.setattr(datasets.urllib.request, "urlopen", no_route)
+    with pytest.raises(RuntimeError, match="mini"):
+        datasets.fetch(["mini"], datasets=(source,))
+
+
+def test_fetch_sets_a_download_timeout(tmp_path, monkeypatch):
+    payload = b"YOU  Y UW1\n"
+    dataset = _mini(tmp_path, payload)
+    monkeypatch.setenv("LYRICS_LINT_DATA", str(tmp_path / "cache"))
+    seen = {}
+
+    class Response:
+        def __init__(self, data):
+            self._data = data
+            self._done = False
+
+        def read(self, _size):
+            if self._done:
+                return b""
+            self._done = True
+            return self._data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        seen["timeout"] = timeout
+        return Response(payload)
+
+    monkeypatch.setattr(datasets.urllib.request, "urlopen", fake_urlopen)
+    datasets.fetch(["mini"], datasets=(dataset,))
+    assert seen["timeout"] == datasets.DOWNLOAD_TIMEOUT
+    assert datasets.DOWNLOAD_TIMEOUT <= 60

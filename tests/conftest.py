@@ -52,6 +52,11 @@ def _global_engine_uses_fixtures(engine):
     from lyrics_lint import core
 
     previous = core._ENGINE
+    previous_flag = engine.loaded_from_dataset
     core._ENGINE = engine
+    # Without this get_engine() would rebuild from the developer's real cache,
+    # reintroducing machine state into the suite.
+    engine.loaded_from_dataset = True
     yield
+    engine.loaded_from_dataset = previous_flag
     core._ENGINE = previous

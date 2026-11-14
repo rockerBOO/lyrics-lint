@@ -285,10 +285,13 @@ class RhymeEngine:
         self.sources: dict[str, str] = {}
         self.unique_patterns: list[str] = []
         self.g2p = g2p
-        self.frequency = dataset_frequency() if frequency is None else frequency
 
+        loaded_from_dataset = dictionary is None
         if dictionary is None:
             dictionary = dataset_dictionary()
+        self.loaded_from_dataset = loaded_from_dataset and bool(dictionary)
+        self.frequency = dataset_frequency() if frequency is None else frequency
+
         for word, pronunciations in dictionary.items():
             w = word.lower()
             self.dict[w] = list(pronunciations)
@@ -351,6 +354,16 @@ class RhymeEngine:
                     del self.pattern_words[pattern]
 
     # ------------------------------------------------------------------ words
+
+    def missing_hint(self) -> str | None:
+        """Fix-it hint when this engine has no dataset dictionary.
+
+        Derived from the engine, not from the filesystem: after a fetch the
+        hint has to disappear only once the running process can see the data.
+        """
+        if self.loaded_from_dataset:
+            return None
+        return "no pronunciation dictionary: run 'lyrics data fetch'"
 
     def patterns(self, word: str) -> list[str]:
         pronunciations = self.dict.get(word.lower(), [])
@@ -598,7 +611,16 @@ def g2p_enabled() -> bool:
 
 
 def get_engine() -> RhymeEngine:
+    """The process-wide engine, rebuilt if it started without data.
+
+    A long-lived process (MCP server, editor plugin) may be running when the
+    user fetches datasets, so an engine that came up empty is rebuilt once a
+    verified dictionary appears.
+    """
     global _ENGINE
-    if _ENGINE is None:
-        _ENGINE = RhymeEngine(g2p=default_g2p if g2p_enabled() else None)
+    if _ENGINE is None or not _ENGINE.loaded_from_dataset:
+        from .datasets import verified_path
+
+        if _ENGINE is None or verified_path("cmudict") is not None:
+            _ENGINE = RhymeEngine(g2p=default_g2p if g2p_enabled() else None)
     return _ENGINE
