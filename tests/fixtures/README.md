@@ -17,9 +17,11 @@ and carries its attribution; it is test data, not part of the program.
 **Regenerating** (only needed when the tests start asserting on new words):
 
 ```bash
-lyrics data fetch                                   # populate the real cache
-cp "$(lyrics data path)/cmudict.dict" /tmp/ds-probe/    # or any directory
-cp "$(lyrics data path)/en_50k.txt"  /tmp/ds-probe/
-# then run the pruning snippet in
-# docs/superpowers/plans/2026-11-14-optional-datasets.md (Task 4, Step 1)
+lyrics data fetch
+uv run python tests/fixtures/regenerate_fixtures.py
 ```
+
+The script keeps every word the test sources mention plus that word's whole
+rhyme-pattern family (400 members per family, most frequent first). Fixtures
+grow as the tests do, so regeneration is expected to change the files whenever
+new expectations are added.

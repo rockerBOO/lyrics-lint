@@ -10,3 +10,6 @@ wheels/
 .venv
 
 .pi
+
+# Working notes (specs, plans) — kept locally, never versioned
+docs/superpowers/
