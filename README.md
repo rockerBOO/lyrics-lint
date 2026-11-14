@@ -18,6 +18,10 @@ the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
   alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
   too, through...` instead of `abou, abreu, accrue`. Slant results sort by
   distance first, then frequency.
+- When the query has more than one syllable, perfect rhymes that share its
+  pre-rhyme vowel rank first: `rhymes shampoo` opens with `tattoo, bamboo,
+  taboo` rather than the monosyllables `to, do, who` that dominate the same
+  pattern family. Monosyllabic queries are unaffected.
 - Slant results carry a phonetic `cost` alongside the plain edit distance, and
   sort by distance first, then cost: substitutions are priced by how far apart
   the phonemes actually are (ARPAbet height/backness/rounding/glide for vowels,

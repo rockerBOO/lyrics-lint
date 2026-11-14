@@ -207,6 +207,24 @@ def is_word_token(word: str) -> bool:
     return WORD_TOKEN_RE.fullmatch(word) is not None
 
 
+def pre_rhyme_vowel(pronunciation: str) -> str:
+    """Stress-free vowel of the syllable just before the rhyme ("" if none).
+
+    shampoo/bamboo/tattoo all rhyme on `UW1` and all share an AE in the
+    preceding syllable, which makes them smoother rhymes for each other than
+    the bare monosyllables (to, do, who) in the same family.
+    """
+    tokens = pronunciation.split()
+    stressed = [i for i, t in enumerate(tokens) if STRESS_TOKEN_RE.match(t)]
+    if not stressed:
+        return ""
+    for i in range(stressed[-1] - 1, -1, -1):
+        base = _base(tokens[i])
+        if base in VOWEL_FEATURES:
+            return base
+    return ""
+
+
 def rhyme_pattern(pronunciation: str) -> str:
     """Return the rhyme pattern (final stressed phoneme .. end) of an ARPAbet string."""
     tokens = pronunciation.split()
@@ -302,10 +320,12 @@ class RhymeEngine:
     # --------------------------------------------------------------- rhymes
 
     def rhymes(self, word: str, limit: int | None = None) -> list[str]:
-        """Perfect rhymes (identical rhyme pattern), most common first.
+        """Perfect rhymes (identical rhyme pattern), richest and common first.
 
         Ranked by frequency so `limit` doesn't truncate to the first N words
-        alphabetically ("abou, abreu, accrue, ..." instead of "do, too, true").
+        alphabetically ("abou, abreu, accrue, ..." instead of "do, too, true"),
+        with multi-syllable words whose pre-rhyme syllable matches the query's
+        lifted ahead of monosyllables in the same family.
         """
         info = self.lookup(word)
         if not info["found"]:
@@ -315,7 +335,18 @@ class RhymeEngine:
             out.update(self.pattern_words.get(pat, set()))
         out.discard(word.lower())
         out = {w for w in out if is_word_token(w)}
-        ranked = sorted(out, key=lambda w: (-frequency(w), w))
+
+        shapes = {pre_rhyme_vowel(p) for p in info["pronunciations"]} - {""}
+
+        def rank(candidate: str) -> tuple[int, float, str]:
+            rich = 0
+            if shapes:
+                prons = self.dict.get(candidate, [])
+                if any(pre_rhyme_vowel(p) in shapes for p in prons):
+                    rich = -1
+            return (rich, -frequency(candidate), candidate)
+
+        ranked = sorted(out, key=rank)
         return ranked[:limit] if limit else ranked
 
     def slant_rhymes(

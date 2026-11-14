@@ -10,6 +10,7 @@ from lyrics_lint.core import (
     get_engine,
     pattern_cost,
     phoneme_cost,
+    pre_rhyme_vowel,
 )
 
 
@@ -217,3 +218,32 @@ def test_near_vowel_swap_costs_less_than_added_coda():
     # AO is one feature from UW (height), so swapping it is a milder slant than
     # closing the syllable with an extra consonant, which changes the shape.
     assert pattern_cost("UW1", "AO1") < pattern_cost("UW1", "UW1 L")
+
+
+# --------------------------------------------- rich (multi-syllable) rhyme ranking
+
+
+def test_pre_rhyme_vowel_of_multisyllable_word():
+    assert pre_rhyme_vowel("SH AE0 M P UW1") == "AE"
+    assert pre_rhyme_vowel("B AE0 M B UW1") == "AE"
+
+
+def test_pre_rhyme_vowel_of_monosyllable_word_is_empty():
+    assert pre_rhyme_vowel("Y UW1") == ""
+    assert pre_rhyme_vowel("T UW1") == ""
+
+
+def test_multisyllable_query_ranks_richer_rhymes_first(engine):
+    # shampoo/bamboo/tattoo share a vowel in the syllable before the rhyme, so
+    # they are smoother rhymes than the monosyllables (to/do/who) that used to
+    # fill this list.
+    words = engine.rhymes("shampoo", limit=5)
+    assert words
+    for word in words:
+        prons = engine.lookup(word)["pronunciations"]
+        assert all(pre_rhyme_vowel(p) == "AE" for p in prons)
+
+
+def test_monosyllable_query_keeps_frequency_order(engine):
+    # No pre-rhyme syllable exists, so nothing is reordered.
+    assert engine.rhymes("you", limit=3) == ["to", "do", "who"]
