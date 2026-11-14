@@ -12,8 +12,54 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from pathlib import Path
 
 STRESS_TOKEN_RE = re.compile(r"^[A-Z]{2}[12]$")
+
+# cmudict carries abbreviations like "a.", "i.", "u.", "a.d." and bare
+# possessives like "this'". They are not singable words, and once results are
+# frequency-sorted they rank near the top.
+WORD_TOKEN_RE = re.compile(r"[a-z]+(?:[-'][a-z]+)*")
+
+# Closed-class words are never useful replacement end-words, and because their
+# patterns are bare vowels ("the" -> AH1) they sit one edit from almost any
+# open syllable. Frequency-sorted, they would otherwise top every slant list.
+# Perfect rhymes are NOT filtered by this.
+FUNCTION_WORDS = frozenset(
+    """
+    a an the and or but nor yet so for of to in on at by with from into onto
+    upon about above below over under through between among against during
+    before after since until as than that this these those there here when
+    where why how what which who whom whose i me my mine we us our ours you
+    your yours he him his she her hers it its they them their theirs oneself
+    be am is are was were been being have has had having do does did doing
+    will would shall should can could may might must not no yes if then else
+    all any some each every both few more most other such own same very
+    just only also even still ever never always oh ah uh um
+    """.split()
+)
+
+# Optional pronunciation overrides, merged over CMUdict at load time.
+DEFAULT_OVERRIDES = Path(__file__).resolve().parent / "data" / "pron_overrides.txt"
+
+_FREQUENCY = None
+
+
+def frequency(word: str) -> float:
+    """Zipf frequency of `word` in English (0.0 = unknown/very rare).
+
+    Used only for ranking results, so a missing `wordfreq` install degrades
+    to insertion order rather than failing.
+    """
+    global _FREQUENCY
+    if _FREQUENCY is None:
+        try:
+            from wordfreq import zipf_frequency
+        except ImportError:  # pragma: no cover - wordfreq is a hard dependency
+            _FREQUENCY = lambda _w: 0.0
+        else:
+            _FREQUENCY = lambda w: zipf_frequency(w, "en")
+    return _FREQUENCY(word)
 
 
 def levenshtein(a: list[str], b: list[str]) -> int:
@@ -35,6 +81,17 @@ def levenshtein(a: list[str], b: list[str]) -> int:
     return prev[len(b)]
 
 
+def final_stress(pattern: str) -> str:
+    """Stress digit of a rhyme pattern's stressed vowel ('1' or '2')."""
+    head = pattern.split(maxsplit=1)[0]
+    return head[-1] if STRESS_TOKEN_RE.match(head) else ""
+
+
+def is_word_token(word: str) -> bool:
+    """Whether `word` is a plain word rather than a dictionary abbreviation."""
+    return WORD_TOKEN_RE.fullmatch(word) is not None
+
+
 def rhyme_pattern(pronunciation: str) -> str:
     """Return the rhyme pattern (final stressed phoneme .. end) of an ARPAbet string."""
     tokens = pronunciation.split()
@@ -48,7 +105,7 @@ def rhyme_pattern(pronunciation: str) -> str:
 class RhymeEngine:
     """In-memory rhyme index built from the CMU Pronouncing Dictionary."""
 
-    def __init__(self) -> None:
+    def __init__(self, overrides: str | Path | None = DEFAULT_OVERRIDES) -> None:
         import cmudict
 
         self.dict: dict[str, list[str]] = {}
@@ -61,7 +118,54 @@ class RhymeEngine:
             for pron in pronunciations:
                 self.pattern_words[rhyme_pattern(pron)].add(w)
 
+        self._load_overrides(overrides)
         self.unique_patterns: list[str] = list(self.pattern_words.keys())
+
+    def _load_overrides(self, path: str | Path | None) -> None:
+        """Merge a CMUdict-format override file into the index.
+
+        One entry per line: `<word> <PHONEMES>`. `#` starts a comment. A line
+        starting with `-` drops that word (e.g. `-blue`). Pronunciations are
+        appended, never replaced, so homographs keep their existing readings.
+        """
+        if path is None:
+            return
+        try:
+            text = Path(path).read_text()
+        except FileNotFoundError:
+            return
+
+        for raw in text.splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            word = parts[0].lower()
+            phonemes = " ".join(parts[1:])
+
+            if word.startswith("-"):
+                self._remove(word[1:])
+                continue
+
+            if not phonemes:
+                raise ValueError(f"{word}: override entry has no pronunciation")
+            if not any(STRESS_TOKEN_RE.match(t) for t in phonemes.split()):
+                raise ValueError(
+                    f"{word}: pronunciation {phonemes!r} has no stress-marked "
+                    "vowel; expected e.g. 'R IH1 Z'"
+                )
+
+            self.dict.setdefault(word, []).append(phonemes)
+            self.pattern_words[rhyme_pattern(phonemes)].add(word)
+
+    def _remove(self, word: str) -> None:
+        for pron in self.dict.pop(word, []):
+            pattern = rhyme_pattern(pron)
+            words = self.pattern_words.get(pattern)
+            if words is not None:
+                words.discard(word)
+                if not words:
+                    del self.pattern_words[pattern]
 
     # ------------------------------------------------------------------ words
 
@@ -82,8 +186,12 @@ class RhymeEngine:
 
     # --------------------------------------------------------------- rhymes
 
-    def rhymes(self, word: str) -> list[str]:
-        """Perfect rhymes (identical rhyme pattern) for a word."""
+    def rhymes(self, word: str, limit: int | None = None) -> list[str]:
+        """Perfect rhymes (identical rhyme pattern), most common first.
+
+        Ranked by frequency so `limit` doesn't truncate to the first N words
+        alphabetically ("abou, abreu, accrue, ..." instead of "do, too, true").
+        """
         info = self.lookup(word)
         if not info["found"]:
             return []
@@ -91,7 +199,9 @@ class RhymeEngine:
         for pat in info["patterns"]:
             out.update(self.pattern_words.get(pat, set()))
         out.discard(word.lower())
-        return sorted(out)
+        out = {w for w in out if is_word_token(w)}
+        ranked = sorted(out, key=lambda w: (-frequency(w), w))
+        return ranked[:limit] if limit else ranked
 
     def slant_rhymes(
         self, word: str, max_distance: int = 1, limit: int | None = None
@@ -100,18 +210,30 @@ class RhymeEngine:
         info = self.lookup(word)
         if not info["found"]:
             return []
+        stress = {final_stress(p) for p in info["patterns"]}
         out: dict[str, int] = {}
         for pat in info["patterns"]:
             for other in self.unique_patterns:
                 if other == pat:
                     continue
+                # A short pattern is 1 edit from any bare vowel, so without
+                # this every unstressed function word ("the", "a") counts as
+                # a slant of a stressed syllable like "you".
+                if final_stress(other) not in stress:
+                    continue
                 dist = levenshtein(pat.split(), other.split())
                 if dist <= max_distance:
                     for w in self.pattern_words.get(other, set()):
-                        if w == word.lower():
+                        if (
+                            w == word.lower()
+                            or w in FUNCTION_WORDS
+                            or not is_word_token(w)
+                        ):
                             continue
                         out[w] = min(out.get(w, 99), dist)
-        ranked = sorted(out.items(), key=lambda kv: (kv[1], kv[0]))
+        ranked = sorted(
+            out.items(), key=lambda kv: (kv[1], -frequency(kv[0]), kv[0])
+        )
         if limit:
             ranked = ranked[:limit]
         return [{"word": w, "distance": d} for w, d in ranked]
@@ -214,7 +336,7 @@ class RhymeEngine:
                 "slant_rhymes": [],
                 "suffix_candidates": self.suffix_candidates(word),
             }
-        perfect = self.rhymes(word)[:limit]
+        perfect = self.rhymes(word, limit=limit)
         slant = self.slant_rhymes(word, max_distance=2, limit=limit)
         return {
             "word": word.lower(),

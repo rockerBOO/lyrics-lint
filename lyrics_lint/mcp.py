@@ -61,7 +61,7 @@ def rhymes(
         return {"word": word, "found": False, "perfect_rhymes": [],
                 "suffix_candidates": engine.suffix_candidates(word)}
     return {"word": word, "found": True, "patterns": info["patterns"],
-            "perfect_rhymes": engine.rhymes(word)[:limit]}
+            "perfect_rhymes": engine.rhymes(word, limit=limit)}
 
 
 @mcp.tool()

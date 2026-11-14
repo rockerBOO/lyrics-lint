@@ -14,6 +14,31 @@ the Carnegie Mellon Pronouncing Dictionary (`cmudict`).
 - When a word isn't found (or has no rhymes), the linter falls back to the
   **last part of the word**: words sharing its final suffix are returned as
   assonance-style candidates.
+- Results are **ranked by word frequency** (`wordfreq`'s Zipf score) rather than
+  alphabetically, so `lyrics rhymes you` opens with `to, do, who, new, two,
+  too, through...` instead of `abou, abreu, accrue`. Slant results sort by
+  distance first, then frequency.
+- Slant lookup skips candidates whose final stress differs from the query's
+  (`the` as `AH0` is not a slant of `you`), plus closed-class words and
+  dictionary artifacts (`a.`, `i.`, `this'`) that would otherwise rank high
+  once sorted by frequency. Perfect rhymes are never filtered.
+
+## Adding words
+
+CMUdict is from 2015 and has no `rizz`, `gyatt`, `delulu`, `doomscroll` or
+`ghosting`. Add pronunciations (or delete bad ones) in
+[`lyrics_lint/data/pron_overrides.txt`](lyrics_lint/data/pron_overrides.txt),
+which is merged over CMUdict at load time:
+
+```
+rizz        R IH1 Z            # add a pronunciation (appended, never replaced)
+-gray       G R EY1           # a leading '-' removes a word from the dictionary
+```
+
+Each added pronunciation **must** carry a stress digit (`1` or `2`) on a vowel —
+without one the rhyme pattern can't be derived and loading fails loudly rather
+than silently mis-grouping the word. Homographs keep their existing readings, so
+overrides add a pronunciation instead of clobbering the others.
 
 ## Setup
 
@@ -58,10 +83,10 @@ uv run lyrics suggestions xylophone
 
 # Lint a whole lyrics file: flag end-words with no rhyme partner in their
 # stanza, or that aren't in the pronunciation dictionary
-uv run lyrics lint song.md
+uv run lyrics lint songs/eleven.md
 
 # Reads from stdin if FILE is omitted (or passed as '-')
-cat song.md | uv run lyrics lint --json
+cat songs/eleven.md | uv run lyrics lint --json
 ```
 
 `lint` splits the input into stanzas on blank lines and markdown structure
@@ -123,6 +148,8 @@ Want to check your lyrics for rhyme issues right in your editor? See
   pattern → words index in memory (~1 s).
 - `slant_rhymes` compares the word's pattern against all unique patterns on
   demand (≈0.1 s), so no all-pairs DB is needed.
+- Ranking by frequency costs ~0.1 s per 5k candidates, which is why `rhymes()`
+  accepts a `limit` and callers pass it through instead of slicing afterwards.
 
 ## References & credits
 

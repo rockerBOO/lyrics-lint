@@ -95,7 +95,7 @@ def rhymes(word, limit, as_json):
         out = {
             "word": word, "found": True,
             "patterns": info["patterns"],
-            "perfect_rhymes": engine.rhymes(word)[:limit],
+            "perfect_rhymes": engine.rhymes(word, limit=limit),
         }
     if as_json:
         click.echo(json.dumps(out, indent=2))
